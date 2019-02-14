@@ -1,29 +1,15 @@
-// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! This module provides constants which are specific to the implementation
 //! of the `f32` floating point data type.
 //!
-//! Mathematically significant numbers are provided in the `consts` sub-module.
-//!
 //! *[See also the `f32` primitive type](../../std/primitive.f32.html).*
+//!
+//! Mathematically significant numbers are provided in the `consts` sub-module.
 
 #![stable(feature = "rust1", since = "1.0.0")]
 #![allow(missing_docs)]
 
 #[cfg(not(test))]
-use core::num;
-#[cfg(not(test))]
 use intrinsics;
-#[cfg(not(test))]
-use num::FpCategory;
 #[cfg(not(test))]
 use sys::cmath;
 
@@ -39,108 +25,11 @@ pub use core::f32::{MIN, MIN_POSITIVE, MAX};
 pub use core::f32::consts;
 
 #[cfg(not(test))]
-#[lang = "f32"]
+#[lang = "f32_runtime"]
 impl f32 {
-    /// Returns `true` if this value is `NaN` and false otherwise.
-    ///
-    /// ```
-    /// use std::f32;
-    ///
-    /// let nan = f32::NAN;
-    /// let f = 7.0_f32;
-    ///
-    /// assert!(nan.is_nan());
-    /// assert!(!f.is_nan());
-    /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn is_nan(self) -> bool { num::Float::is_nan(self) }
-
-    /// Returns `true` if this value is positive infinity or negative infinity and
-    /// false otherwise.
-    ///
-    /// ```
-    /// use std::f32;
-    ///
-    /// let f = 7.0f32;
-    /// let inf = f32::INFINITY;
-    /// let neg_inf = f32::NEG_INFINITY;
-    /// let nan = f32::NAN;
-    ///
-    /// assert!(!f.is_infinite());
-    /// assert!(!nan.is_infinite());
-    ///
-    /// assert!(inf.is_infinite());
-    /// assert!(neg_inf.is_infinite());
-    /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn is_infinite(self) -> bool { num::Float::is_infinite(self) }
-
-    /// Returns `true` if this number is neither infinite nor `NaN`.
-    ///
-    /// ```
-    /// use std::f32;
-    ///
-    /// let f = 7.0f32;
-    /// let inf = f32::INFINITY;
-    /// let neg_inf = f32::NEG_INFINITY;
-    /// let nan = f32::NAN;
-    ///
-    /// assert!(f.is_finite());
-    ///
-    /// assert!(!nan.is_finite());
-    /// assert!(!inf.is_finite());
-    /// assert!(!neg_inf.is_finite());
-    /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn is_finite(self) -> bool { num::Float::is_finite(self) }
-
-    /// Returns `true` if the number is neither zero, infinite,
-    /// [subnormal][subnormal], or `NaN`.
-    ///
-    /// ```
-    /// use std::f32;
-    ///
-    /// let min = f32::MIN_POSITIVE; // 1.17549435e-38f32
-    /// let max = f32::MAX;
-    /// let lower_than_min = 1.0e-40_f32;
-    /// let zero = 0.0_f32;
-    ///
-    /// assert!(min.is_normal());
-    /// assert!(max.is_normal());
-    ///
-    /// assert!(!zero.is_normal());
-    /// assert!(!f32::NAN.is_normal());
-    /// assert!(!f32::INFINITY.is_normal());
-    /// // Values between `0` and `min` are Subnormal.
-    /// assert!(!lower_than_min.is_normal());
-    /// ```
-    /// [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn is_normal(self) -> bool { num::Float::is_normal(self) }
-
-    /// Returns the floating point category of the number. If only one property
-    /// is going to be tested, it is generally faster to use the specific
-    /// predicate instead.
-    ///
-    /// ```
-    /// use std::num::FpCategory;
-    /// use std::f32;
-    ///
-    /// let num = 12.4_f32;
-    /// let inf = f32::INFINITY;
-    ///
-    /// assert_eq!(num.classify(), FpCategory::Normal);
-    /// assert_eq!(inf.classify(), FpCategory::Infinite);
-    /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn classify(self) -> FpCategory { num::Float::classify(self) }
-
     /// Returns the largest integer less than or equal to a number.
+    ///
+    /// # Examples
     ///
     /// ```
     /// let f = 3.99_f32;
@@ -173,6 +62,8 @@ impl f32 {
 
     /// Returns the smallest integer greater than or equal to a number.
     ///
+    /// # Examples
+    ///
     /// ```
     /// let f = 3.01_f32;
     /// let g = 4.0_f32;
@@ -193,6 +84,8 @@ impl f32 {
     /// Returns the nearest integer to a number. Round half-way cases away from
     /// `0.0`.
     ///
+    /// # Examples
+    ///
     /// ```
     /// let f = 3.3_f32;
     /// let g = -3.3_f32;
@@ -208,6 +101,8 @@ impl f32 {
 
     /// Returns the integer part of a number.
     ///
+    /// # Examples
+    ///
     /// ```
     /// let f = 3.3_f32;
     /// let g = -3.7_f32;
@@ -222,6 +117,8 @@ impl f32 {
     }
 
     /// Returns the fractional part of a number.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -241,6 +138,8 @@ impl f32 {
     /// Computes the absolute value of `self`. Returns `NAN` if the
     /// number is `NAN`.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -257,13 +156,17 @@ impl f32 {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
-    pub fn abs(self) -> f32 { num::Float::abs(self) }
+    pub fn abs(self) -> f32 {
+        unsafe { intrinsics::fabsf32(self) }
+    }
 
     /// Returns a number that represents the sign of `self`.
     ///
     /// - `1.0` if the number is positive, `+0.0` or `INFINITY`
     /// - `-1.0` if the number is negative, `-0.0` or `NEG_INFINITY`
     /// - `NAN` if the number is `NAN`
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -277,39 +180,50 @@ impl f32 {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
-    pub fn signum(self) -> f32 { num::Float::signum(self) }
+    pub fn signum(self) -> f32 {
+        if self.is_nan() {
+            NAN
+        } else {
+            unsafe { intrinsics::copysignf32(1.0, self) }
+        }
+    }
 
-    /// Returns `true` if and only if `self` has a positive sign, including `+0.0`, `NaN`s with
-    /// positive sign bit and positive infinity.
+    /// Returns a number composed of the magnitude of `self` and the sign of
+    /// `y`.
+    ///
+    /// Equal to `self` if the sign of `self` and `y` are the same, otherwise
+    /// equal to `-self`. If `self` is a `NAN`, then a `NAN` with the sign of
+    /// `y` is returned.
+    ///
+    /// # Examples
     ///
     /// ```
-    /// let f = 7.0_f32;
-    /// let g = -7.0_f32;
+    /// #![feature(copysign)]
+    /// use std::f32;
     ///
-    /// assert!(f.is_sign_positive());
-    /// assert!(!g.is_sign_positive());
+    /// let f = 3.5_f32;
+    ///
+    /// assert_eq!(f.copysign(0.42), 3.5_f32);
+    /// assert_eq!(f.copysign(-0.42), -3.5_f32);
+    /// assert_eq!((-f).copysign(0.42), 3.5_f32);
+    /// assert_eq!((-f).copysign(-0.42), -3.5_f32);
+    ///
+    /// assert!(f32::NAN.copysign(1.0).is_nan());
     /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
-    pub fn is_sign_positive(self) -> bool { num::Float::is_sign_positive(self) }
-
-    /// Returns `true` if and only if `self` has a negative sign, including `-0.0`, `NaN`s with
-    /// negative sign bit and negative infinity.
-    ///
-    /// ```
-    /// let f = 7.0f32;
-    /// let g = -7.0f32;
-    ///
-    /// assert!(!f.is_sign_negative());
-    /// assert!(g.is_sign_negative());
-    /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn is_sign_negative(self) -> bool { num::Float::is_sign_negative(self) }
+    #[must_use]
+    #[unstable(feature="copysign", issue="55169")]
+    pub fn copysign(self, y: f32) -> f32 {
+        unsafe { intrinsics::copysignf32(self, y) }
+    }
 
     /// Fused multiply-add. Computes `(self * a) + b` with only one rounding
-    /// error. This produces a more accurate result with better performance than
-    /// a separate multiplication operation followed by an add.
+    /// error, yielding a more accurate result than an unfused multiply-add.
+    ///
+    /// Using `mul_add` can be more performant than an unfused multiply-add if
+    /// the target architecture has a dedicated `fma` CPU instruction.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -329,23 +243,75 @@ impl f32 {
         unsafe { intrinsics::fmaf32(self, a, b) }
     }
 
-    /// Takes the reciprocal (inverse) of a number, `1/x`.
+    /// Calculates Euclidean division, the matching method for `rem_euclid`.
+    ///
+    /// This computes the integer `n` such that
+    /// `self = n * rhs + self.rem_euclid(rhs)`.
+    /// In other words, the result is `self / rhs` rounded to the integer `n`
+    /// such that `self >= n * rhs`.
+    ///
+    /// # Examples
     ///
     /// ```
-    /// use std::f32;
-    ///
-    /// let x = 2.0_f32;
-    /// let abs_difference = (x.recip() - (1.0/x)).abs();
-    ///
-    /// assert!(abs_difference <= f32::EPSILON);
+    /// #![feature(euclidean_division)]
+    /// let a: f32 = 7.0;
+    /// let b = 4.0;
+    /// assert_eq!(a.div_euclid(b), 1.0); // 7.0 > 4.0 * 1.0
+    /// assert_eq!((-a).div_euclid(b), -2.0); // -7.0 >= 4.0 * -2.0
+    /// assert_eq!(a.div_euclid(-b), -1.0); // 7.0 >= -4.0 * -1.0
+    /// assert_eq!((-a).div_euclid(-b), 2.0); // -7.0 >= -4.0 * 2.0
     /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
-    pub fn recip(self) -> f32 { num::Float::recip(self) }
+    #[unstable(feature = "euclidean_division", issue = "49048")]
+    pub fn div_euclid(self, rhs: f32) -> f32 {
+        let q = (self / rhs).trunc();
+        if self % rhs < 0.0 {
+            return if rhs > 0.0 { q - 1.0 } else { q + 1.0 }
+        }
+        q
+    }
+
+    /// Calculates the least nonnegative remainder of `self (mod rhs)`.
+    ///
+    /// In particular, the return value `r` satisfies `0.0 <= r < rhs.abs()` in
+    /// most cases. However, due to a floating point round-off error it can
+    /// result in `r == rhs.abs()`, violating the mathematical definition, if
+    /// `self` is much smaller than `rhs.abs()` in magnitude and `self < 0.0`.
+    /// This result is not an element of the function's codomain, but it is the
+    /// closest floating point number in the real numbers and thus fulfills the
+    /// property `self == self.div_euclid(rhs) * rhs + self.rem_euclid(rhs)`
+    /// approximatively.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #![feature(euclidean_division)]
+    /// let a: f32 = 7.0;
+    /// let b = 4.0;
+    /// assert_eq!(a.rem_euclid(b), 3.0);
+    /// assert_eq!((-a).rem_euclid(b), 1.0);
+    /// assert_eq!(a.rem_euclid(-b), 3.0);
+    /// assert_eq!((-a).rem_euclid(-b), 1.0);
+    /// // limitation due to round-off error
+    /// assert!((-std::f32::EPSILON).rem_euclid(3.0) != 0.0);
+    /// ```
+    #[inline]
+    #[unstable(feature = "euclidean_division", issue = "49048")]
+    pub fn rem_euclid(self, rhs: f32) -> f32 {
+        let r = self % rhs;
+        if r < 0.0 {
+            r + rhs.abs()
+        } else {
+            r
+        }
+    }
+
 
     /// Raises a number to an integer power.
     ///
     /// Using this function is generally faster than using `powf`
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -357,9 +323,13 @@ impl f32 {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
-    pub fn powi(self, n: i32) -> f32 { num::Float::powi(self, n) }
+    pub fn powi(self, n: i32) -> f32 {
+        unsafe { intrinsics::powif32(self, n) }
+    }
 
     /// Raises a number to a floating point power.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -383,6 +353,8 @@ impl f32 {
     ///
     /// Returns NaN if `self` is a negative number.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -405,6 +377,8 @@ impl f32 {
     }
 
     /// Returns `e^(self)`, (the exponential function).
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -430,6 +404,8 @@ impl f32 {
 
     /// Returns `2^(self)`.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -447,6 +423,8 @@ impl f32 {
     }
 
     /// Returns the natural logarithm of the number.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -476,6 +454,8 @@ impl f32 {
     /// `self.log2()` can produce more accurate results for base 2, and
     /// `self.log10()` can produce more accurate results for base 10.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -491,6 +471,8 @@ impl f32 {
     pub fn log(self, base: f32) -> f32 { self.ln() / base.ln() }
 
     /// Returns the base 2 logarithm of the number.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -513,6 +495,8 @@ impl f32 {
 
     /// Returns the base 10 logarithm of the number.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -533,72 +517,12 @@ impl f32 {
         return unsafe { intrinsics::log10f32(self) };
     }
 
-    /// Converts radians to degrees.
-    ///
-    /// ```
-    /// use std::f32::{self, consts};
-    ///
-    /// let angle = consts::PI;
-    ///
-    /// let abs_difference = (angle.to_degrees() - 180.0).abs();
-    ///
-    /// assert!(abs_difference <= f32::EPSILON);
-    /// ```
-    #[stable(feature = "f32_deg_rad_conversions", since="1.7.0")]
-    #[inline]
-    pub fn to_degrees(self) -> f32 { num::Float::to_degrees(self) }
-
-    /// Converts degrees to radians.
-    ///
-    /// ```
-    /// use std::f32::{self, consts};
-    ///
-    /// let angle = 180.0f32;
-    ///
-    /// let abs_difference = (angle.to_radians() - consts::PI).abs();
-    ///
-    /// assert!(abs_difference <= f32::EPSILON);
-    /// ```
-    #[stable(feature = "f32_deg_rad_conversions", since="1.7.0")]
-    #[inline]
-    pub fn to_radians(self) -> f32 { num::Float::to_radians(self) }
-
-    /// Returns the maximum of the two numbers.
-    ///
-    /// ```
-    /// let x = 1.0f32;
-    /// let y = 2.0f32;
-    ///
-    /// assert_eq!(x.max(y), y);
-    /// ```
-    ///
-    /// If one of the arguments is NaN, then the other argument is returned.
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn max(self, other: f32) -> f32 {
-        num::Float::max(self, other)
-    }
-
-    /// Returns the minimum of the two numbers.
-    ///
-    /// ```
-    /// let x = 1.0f32;
-    /// let y = 2.0f32;
-    ///
-    /// assert_eq!(x.min(y), x);
-    /// ```
-    ///
-    /// If one of the arguments is NaN, then the other argument is returned.
-    #[stable(feature = "rust1", since = "1.0.0")]
-    #[inline]
-    pub fn min(self, other: f32) -> f32 {
-        num::Float::min(self, other)
-    }
-
     /// The positive difference of two numbers.
     ///
     /// * If `self <= other`: `0:0`
     /// * Else: `self - other`
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -616,7 +540,8 @@ impl f32 {
     #[inline]
     #[rustc_deprecated(since = "1.10.0",
                        reason = "you probably meant `(self - other).abs()`: \
-                                 this operation is `(self - other).max(0.0)` (also \
+                                 this operation is `(self - other).max(0.0)` \
+                                 except that `abs_sub` also propagates NaNs (also \
                                  known as `fdimf` in C). If you truly need the positive \
                                  difference, consider using that expression or the C function \
                                  `fdimf`, depending on how you wish to handle NaN (please consider \
@@ -626,6 +551,8 @@ impl f32 {
     }
 
     /// Takes the cubic root of a number.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -646,6 +573,8 @@ impl f32 {
     /// Calculates the length of the hypotenuse of a right-angle triangle given
     /// legs of length `x` and `y`.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -664,6 +593,8 @@ impl f32 {
     }
 
     /// Computes the sine of a number (in radians).
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -686,6 +617,8 @@ impl f32 {
 
     /// Computes the cosine of a number (in radians).
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -707,6 +640,8 @@ impl f32 {
 
     /// Computes the tangent of a number (in radians).
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -724,6 +659,8 @@ impl f32 {
     /// Computes the arcsine of a number. Return value is in radians in
     /// the range [-pi/2, pi/2] or NaN if the number is outside the range
     /// [-1, 1].
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -745,6 +682,8 @@ impl f32 {
     /// the range [0, pi] or NaN if the number is outside the range
     /// [-1, 1].
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -764,6 +703,8 @@ impl f32 {
     /// Computes the arctangent of a number. Return value is in radians in the
     /// range [-pi/2, pi/2];
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -780,23 +721,26 @@ impl f32 {
         unsafe { cmath::atanf(self) }
     }
 
-    /// Computes the four quadrant arctangent of `self` (`y`) and `other` (`x`).
+    /// Computes the four quadrant arctangent of `self` (`y`) and `other` (`x`) in radians.
     ///
     /// * `x = 0`, `y = 0`: `0`
     /// * `x >= 0`: `arctan(y/x)` -> `[-pi/2, pi/2]`
     /// * `y >= 0`: `arctan(y/x) + pi` -> `(pi/2, pi]`
     /// * `y < 0`: `arctan(y/x) - pi` -> `(-pi, -pi/2)`
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
     /// let pi = f32::consts::PI;
-    /// // All angles from horizontal right (+x)
-    /// // 45 deg counter-clockwise
+    /// // Positive angles measured counter-clockwise
+    /// // from positive x axis
+    /// // -pi/4 radians (45 deg clockwise)
     /// let x1 = 3.0f32;
     /// let y1 = -3.0f32;
     ///
-    /// // 135 deg clockwise
+    /// // 3pi/4 radians (135 deg counter-clockwise)
     /// let x2 = -3.0f32;
     /// let y2 = 3.0f32;
     ///
@@ -814,6 +758,8 @@ impl f32 {
 
     /// Simultaneously computes the sine and cosine of the number, `x`. Returns
     /// `(sin(x), cos(x))`.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -836,6 +782,8 @@ impl f32 {
     /// Returns `e^(self) - 1` in a way that is accurate even if the
     /// number is close to zero.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -855,6 +803,8 @@ impl f32 {
     /// Returns `ln(1+n)` (natural logarithm) more accurately than if
     /// the operations were performed separately.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -872,6 +822,8 @@ impl f32 {
     }
 
     /// Hyperbolic sine function.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -894,6 +846,8 @@ impl f32 {
 
     /// Hyperbolic cosine function.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -915,6 +869,8 @@ impl f32 {
 
     /// Hyperbolic tangent function.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -935,6 +891,8 @@ impl f32 {
     }
 
     /// Inverse hyperbolic sine function.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use std::f32;
@@ -958,6 +916,8 @@ impl f32 {
 
     /// Inverse hyperbolic cosine function.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -979,6 +939,8 @@ impl f32 {
 
     /// Inverse hyperbolic tangent function.
     ///
+    /// # Examples
+    ///
     /// ```
     /// use std::f32;
     ///
@@ -993,74 +955,6 @@ impl f32 {
     #[inline]
     pub fn atanh(self) -> f32 {
         0.5 * ((2.0 * self) / (1.0 - self)).ln_1p()
-    }
-
-    /// Raw transmutation to `u32`.
-    ///
-    /// This is currently identical to `transmute::<f32, u32>(self)` on all platforms.
-    ///
-    /// See `from_bits` for some discussion of the portability of this operation
-    /// (there are almost no issues).
-    ///
-    /// Note that this function is distinct from `as` casting, which attempts to
-    /// preserve the *numeric* value, and not the bitwise value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// assert_ne!((1f32).to_bits(), 1f32 as u32); // to_bits() is not casting!
-    /// assert_eq!((12.5f32).to_bits(), 0x41480000);
-    ///
-    /// ```
-    #[stable(feature = "float_bits_conv", since = "1.20.0")]
-    #[inline]
-    pub fn to_bits(self) -> u32 {
-        unsafe { ::mem::transmute(self) }
-    }
-
-    /// Raw transmutation from `u32`.
-    ///
-    /// This is currently identical to `transmute::<u32, f32>(v)` on all platforms.
-    /// It turns out this is incredibly portable, for two reasons:
-    ///
-    /// * Floats and Ints have the same endianess on all supported platforms.
-    /// * IEEE-754 very precisely specifies the bit layout of floats.
-    ///
-    /// However there is one caveat: prior to the 2008 version of IEEE-754, how
-    /// to interpret the NaN signaling bit wasn't actually specified. Most platforms
-    /// (notably x86 and ARM) picked the interpretation that was ultimately
-    /// standardized in 2008, but some didn't (notably MIPS). As a result, all
-    /// signaling NaNs on MIPS are quiet NaNs on x86, and vice-versa.
-    ///
-    /// Rather than trying to preserve signaling-ness cross-platform, this
-    /// implementation favours preserving the exact bits. This means that
-    /// any payloads encoded in NaNs will be preserved even if the result of
-    /// this method is sent over the network from an x86 machine to a MIPS one.
-    ///
-    /// If the results of this method are only manipulated by the same
-    /// architecture that produced them, then there is no portability concern.
-    ///
-    /// If the input isn't NaN, then there is no portability concern.
-    ///
-    /// If you don't care about signalingness (very likely), then there is no
-    /// portability concern.
-    ///
-    /// Note that this function is distinct from `as` casting, which attempts to
-    /// preserve the *numeric* value, and not the bitwise value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::f32;
-    /// let v = f32::from_bits(0x41480000);
-    /// let difference = (v - 12.5).abs();
-    /// assert!(difference <= 1e-5);
-    /// ```
-    #[stable(feature = "float_bits_conv", since = "1.20.0")]
-    #[inline]
-    pub fn from_bits(v: u32) -> Self {
-        // It turns out the safety issues with sNaN were overblown! Hooray!
-        unsafe { ::mem::transmute(v) }
     }
 }
 
@@ -1532,6 +1426,7 @@ mod tests {
         assert!(nan.to_degrees().is_nan());
         assert_eq!(inf.to_degrees(), inf);
         assert_eq!(neg_inf.to_degrees(), neg_inf);
+        assert_eq!(1_f32.to_degrees(), 57.2957795130823208767981548141051703);
     }
 
     #[test]

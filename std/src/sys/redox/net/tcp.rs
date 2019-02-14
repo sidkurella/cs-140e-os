@@ -1,15 +1,5 @@
-// Copyright 2016 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use cmp;
-use io::{Error, ErrorKind, Result};
+use io::{self, Error, ErrorKind, Result};
 use mem;
 use net::{SocketAddr, Shutdown};
 use path::Path;
@@ -24,8 +14,8 @@ use super::{path_to_peer_addr, path_to_local_addr};
 pub struct TcpStream(File);
 
 impl TcpStream {
-    pub fn connect(addr: &SocketAddr) -> Result<TcpStream> {
-        let path = format!("tcp:{}", addr);
+    pub fn connect(addr: Result<&SocketAddr>) -> Result<TcpStream> {
+        let path = format!("tcp:{}", addr?);
         let mut options = OpenOptions::new();
         options.read(true);
         options.write(true);
@@ -130,6 +120,10 @@ impl TcpStream {
     pub fn set_read_timeout(&self, duration_option: Option<Duration>) -> Result<()> {
         let file = self.0.dup(b"read_timeout")?;
         if let Some(duration) = duration_option {
+            if duration.as_secs() == 0 && duration.subsec_nanos() == 0 {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                                          "cannot set a 0 duration timeout"));
+            }
             file.write(&TimeSpec {
                 tv_sec: duration.as_secs() as i64,
                 tv_nsec: duration.subsec_nanos() as i32
@@ -143,6 +137,10 @@ impl TcpStream {
     pub fn set_write_timeout(&self, duration_option: Option<Duration>) -> Result<()> {
         let file = self.0.dup(b"write_timeout")?;
         if let Some(duration) = duration_option {
+            if duration.as_secs() == 0 && duration.subsec_nanos() == 0 {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                                          "cannot set a 0 duration timeout"));
+            }
             file.write(&TimeSpec {
                 tv_sec: duration.as_secs() as i64,
                 tv_nsec: duration.subsec_nanos() as i32
@@ -172,8 +170,8 @@ impl IntoInner<File> for TcpStream {
 pub struct TcpListener(File);
 
 impl TcpListener {
-    pub fn bind(addr: &SocketAddr) -> Result<TcpListener> {
-        let path = format!("tcp:/{}", addr);
+    pub fn bind(addr: Result<&SocketAddr>) -> Result<TcpListener> {
+        let path = format!("tcp:/{}", addr?);
         let mut options = OpenOptions::new();
         options.read(true);
         options.write(true);

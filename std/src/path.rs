@@ -1,13 +1,3 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Cross-platform path manipulation.
 //!
 //! This module provides two types, [`PathBuf`] and [`Path`][`Path`] (akin to [`String`]
@@ -87,6 +77,8 @@ use hash::{Hash, Hasher};
 use iter::{self, FusedIterator};
 use ops::{self, Deref};
 use rc::Rc;
+use str::FromStr;
+use string::ParseError;
 use sync::Arc;
 
 use ffi::{OsStr, OsString};
@@ -107,11 +99,11 @@ use sys::path::{is_sep_byte, is_verbatim_sep, MAIN_SEP_STR, parse_prefix};
 // Windows Prefixes
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Windows path prefixes, e.g. `C:` or `\\server\share`.
+/// Windows path prefixes, e.g., `C:` or `\\server\share`.
 ///
 /// Windows uses a variety of path prefix styles, including references to drive
 /// volumes (like `C:`), network shared folders (like `\\server\share`), and
-/// others. In addition, some path prefixes are "verbatim" (i.e. prefixed with
+/// others. In addition, some path prefixes are "verbatim" (i.e., prefixed with
 /// `\\?\`), in which case `/` is *not* treated as a separator and essentially
 /// no normalization is performed.
 ///
@@ -146,7 +138,7 @@ use sys::path::{is_sep_byte, is_verbatim_sep, MAIN_SEP_STR, parse_prefix};
 #[derive(Copy, Clone, Debug, Hash, PartialOrd, Ord, PartialEq, Eq)]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub enum Prefix<'a> {
-    /// Verbatim prefix, e.g. `\\?\cat_pics`.
+    /// Verbatim prefix, e.g., `\\?\cat_pics`.
     ///
     /// Verbatim prefixes consist of `\\?\` immediately followed by the given
     /// component.
@@ -154,7 +146,7 @@ pub enum Prefix<'a> {
     Verbatim(#[stable(feature = "rust1", since = "1.0.0")] &'a OsStr),
 
     /// Verbatim prefix using Windows' _**U**niform **N**aming **C**onvention_,
-    /// e.g. `\\?\UNC\server\share`.
+    /// e.g., `\\?\UNC\server\share`.
     ///
     /// Verbatim UNC prefixes consist of `\\?\UNC\` immediately followed by the
     /// server's hostname and a share name.
@@ -164,14 +156,14 @@ pub enum Prefix<'a> {
         #[stable(feature = "rust1", since = "1.0.0")] &'a OsStr,
     ),
 
-    /// Verbatim disk prefix, e.g. `\\?\C:\`.
+    /// Verbatim disk prefix, e.g., `\\?\C:\`.
     ///
     /// Verbatim disk prefixes consist of `\\?\` immediately followed by the
     /// drive letter and `:\`.
     #[stable(feature = "rust1", since = "1.0.0")]
     VerbatimDisk(#[stable(feature = "rust1", since = "1.0.0")] u8),
 
-    /// Device namespace prefix, e.g. `\\.\COM42`.
+    /// Device namespace prefix, e.g., `\\.\COM42`.
     ///
     /// Device namespace prefixes consist of `\\.\` immediately followed by the
     /// device name.
@@ -225,7 +217,7 @@ impl<'a> Prefix<'a> {
 
     }
 
-    /// Determines if the prefix is verbatim, i.e. begins with `\\?\`.
+    /// Determines if the prefix is verbatim, i.e., begins with `\\?\`.
     ///
     /// # Examples
     ///
@@ -297,10 +289,9 @@ pub const MAIN_SEPARATOR: char = ::sys::path::MAIN_SEP;
 // Iterate through `iter` while it matches `prefix`; return `None` if `prefix`
 // is not a prefix of `iter`, otherwise return `Some(iter_after_prefix)` giving
 // `iter` after having exhausted `prefix`.
-fn iter_after<A, I, J>(mut iter: I, mut prefix: J) -> Option<I>
-    where I: Iterator<Item = A> + Clone,
-          J: Iterator<Item = A>,
-          A: PartialEq
+fn iter_after<'a, 'b, I, J>(mut iter: I, mut prefix: J) -> Option<I>
+    where I: Iterator<Item = Component<'a>> + Clone,
+          J: Iterator<Item = Component<'b>>,
 {
     loop {
         let mut iter_next = iter.clone();
@@ -508,7 +499,7 @@ impl<'a> Hash for PrefixComponent<'a> {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub enum Component<'a> {
-    /// A Windows path prefix, e.g. `C:` or `\\server\share`.
+    /// A Windows path prefix, e.g., `C:` or `\\server\share`.
     ///
     /// There is a large variety of prefix types, see [`Prefix`]'s documentation
     /// for more.
@@ -527,15 +518,15 @@ pub enum Component<'a> {
     #[stable(feature = "rust1", since = "1.0.0")]
     RootDir,
 
-    /// A reference to the current directory, i.e. `.`.
+    /// A reference to the current directory, i.e., `.`.
     #[stable(feature = "rust1", since = "1.0.0")]
     CurDir,
 
-    /// A reference to the parent directory, i.e. `..`.
+    /// A reference to the parent directory, i.e., `..`.
     #[stable(feature = "rust1", since = "1.0.0")]
     ParentDir,
 
-    /// A normal component, e.g. `a` and `b` in `a/b`.
+    /// A normal component, e.g., `a` and `b` in `a/b`.
     ///
     /// This variant is the most common one, it represents references to files
     /// or directories.
@@ -576,7 +567,7 @@ impl<'a> AsRef<OsStr> for Component<'a> {
     }
 }
 
-#[stable(feature = "path_component_asref", since = "1.24.0")]
+#[stable(feature = "path_component_asref", since = "1.25.0")]
 impl<'a> AsRef<Path> for Component<'a> {
     fn as_ref(&self) -> &Path {
         self.as_os_str().as_ref()
@@ -614,7 +605,7 @@ pub struct Components<'a> {
 
     // true if path *physically* has a root separator; for most Windows
     // prefixes, it may have a "logical" rootseparator for the purposes of
-    // normalization, e.g.  \\server\share == \\server\share\.
+    // normalization, e.g.,  \\server\share == \\server\share\.
     has_physical_root: bool,
 
     // The iterator is double-ended, and these two states keep track of what has
@@ -797,7 +788,7 @@ impl<'a> Components<'a> {
         (comp.len() + extra, self.parse_single_component(comp))
     }
 
-    // trim away repeated separators (i.e. empty components) on the left
+    // trim away repeated separators (i.e., empty components) on the left
     fn trim_left(&mut self) {
         while !self.path.is_empty() {
             let (size, comp) = self.parse_next_component();
@@ -809,7 +800,7 @@ impl<'a> Components<'a> {
         }
     }
 
-    // trim away repeated separators (i.e. empty components) on the right
+    // trim away repeated separators (i.e., empty components) on the right
     fn trim_right(&mut self) {
         while self.path.len() > self.len_before_body() {
             let (size, comp) = self.parse_next_component_back();
@@ -905,7 +896,7 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
     }
 }
 
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a> FusedIterator for Iter<'a> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -1008,7 +999,7 @@ impl<'a> DoubleEndedIterator for Components<'a> {
     }
 }
 
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a> FusedIterator for Components<'a> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -1034,6 +1025,45 @@ impl<'a> cmp::Ord for Components<'a> {
         Iterator::cmp(self.clone(), other.clone())
     }
 }
+
+/// An iterator over [`Path`] and its ancestors.
+///
+/// This `struct` is created by the [`ancestors`] method on [`Path`].
+/// See its documentation for more.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// let path = Path::new("/foo/bar");
+///
+/// for ancestor in path.ancestors() {
+///     println!("{}", ancestor.display());
+/// }
+/// ```
+///
+/// [`ancestors`]: struct.Path.html#method.ancestors
+/// [`Path`]: struct.Path.html
+#[derive(Copy, Clone, Debug)]
+#[stable(feature = "path_ancestors", since = "1.28.0")]
+pub struct Ancestors<'a> {
+    next: Option<&'a Path>,
+}
+
+#[stable(feature = "path_ancestors", since = "1.28.0")]
+impl<'a> Iterator for Ancestors<'a> {
+    type Item = &'a Path;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.next;
+        self.next = next.and_then(Path::parent);
+        next
+    }
+}
+
+#[stable(feature = "path_ancestors", since = "1.28.0")]
+impl<'a> FusedIterator for Ancestors<'a> {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basic types and traits
@@ -1138,7 +1168,7 @@ impl PathBuf {
     ///
     /// On Windows:
     ///
-    /// * if `path` has a root but no prefix (e.g. `\windows`), it
+    /// * if `path` has a root but no prefix (e.g., `\windows`), it
     ///   replaces everything except for the prefix (if any) of `self`.
     /// * if `path` has a prefix but no root, it replaces `self`.
     ///
@@ -1185,7 +1215,7 @@ impl PathBuf {
         if path.is_absolute() || path.prefix().is_some() {
             self.as_mut_vec().truncate(0);
 
-        // `path` has a root but no prefix, e.g. `\windows` (Windows only)
+        // `path` has a root but no prefix, e.g., `\windows` (Windows only)
         } else if path.has_root() {
             let prefix_len = self.components().prefix_remaining();
             self.as_mut_vec().truncate(prefix_len);
@@ -1357,6 +1387,9 @@ impl<'a> From<&'a Path> for Box<Path> {
 
 #[stable(feature = "path_buf_from_box", since = "1.18.0")]
 impl From<Box<Path>> for PathBuf {
+    /// Converts a `Box<Path>` into a `PathBuf`
+    ///
+    /// This conversion does not allocate or copy memory.
     fn from(boxed: Box<Path>) -> PathBuf {
         boxed.into_path_buf()
     }
@@ -1364,8 +1397,20 @@ impl From<Box<Path>> for PathBuf {
 
 #[stable(feature = "box_from_path_buf", since = "1.20.0")]
 impl From<PathBuf> for Box<Path> {
+    /// Converts a `PathBuf` into a `Box<Path>`
+    ///
+    /// This conversion currently should not allocate memory,
+    /// but this behavior is not guaranteed on all platforms or in all future versions.
     fn from(p: PathBuf) -> Box<Path> {
         p.into_boxed_path()
+    }
+}
+
+#[stable(feature = "more_box_slice_clone", since = "1.29.0")]
+impl Clone for Box<Path> {
+    #[inline]
+    fn clone(&self) -> Self {
+        self.to_path_buf().into_boxed_path()
     }
 }
 
@@ -1378,6 +1423,9 @@ impl<'a, T: ?Sized + AsRef<OsStr>> From<&'a T> for PathBuf {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl From<OsString> for PathBuf {
+    /// Converts a `OsString` into a `PathBuf`
+    ///
+    /// This conversion does not allocate or copy memory.
     fn from(s: OsString) -> PathBuf {
         PathBuf { inner: s }
     }
@@ -1385,6 +1433,9 @@ impl From<OsString> for PathBuf {
 
 #[stable(feature = "from_path_buf_for_os_string", since = "1.14.0")]
 impl From<PathBuf> for OsString {
+    /// Converts a `PathBuf` into a `OsString`
+    ///
+    /// This conversion does not allocate or copy memory.
     fn from(path_buf : PathBuf) -> OsString {
         path_buf.inner
     }
@@ -1392,8 +1443,20 @@ impl From<PathBuf> for OsString {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl From<String> for PathBuf {
+    /// Converts a `String` into a `PathBuf`
+    ///
+    /// This conversion does not allocate or copy memory.
     fn from(s: String) -> PathBuf {
         PathBuf::from(OsString::from(s))
+    }
+}
+
+#[stable(feature = "path_from_str", since = "1.32.0")]
+impl FromStr for PathBuf {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(PathBuf::from(s))
     }
 }
 
@@ -1417,7 +1480,7 @@ impl<P: AsRef<Path>> iter::Extend<P> for PathBuf {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Debug for PathBuf {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, formatter)
     }
 }
@@ -1461,8 +1524,25 @@ impl<'a> From<PathBuf> for Cow<'a, Path> {
     }
 }
 
+#[stable(feature = "cow_from_pathbuf_ref", since = "1.28.0")]
+impl<'a> From<&'a PathBuf> for Cow<'a, Path> {
+    #[inline]
+    fn from(p: &'a PathBuf) -> Cow<'a, Path> {
+        Cow::Borrowed(p.as_path())
+    }
+}
+
+#[stable(feature = "pathbuf_from_cow_path", since = "1.28.0")]
+impl<'a> From<Cow<'a, Path>> for PathBuf {
+    #[inline]
+    fn from(p: Cow<'a, Path>) -> Self {
+        p.into_owned()
+    }
+}
+
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
 impl From<PathBuf> for Arc<Path> {
+    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
     #[inline]
     fn from(s: PathBuf) -> Arc<Path> {
         let arc: Arc<OsStr> = Arc::from(s.into_os_string());
@@ -1472,6 +1552,7 @@ impl From<PathBuf> for Arc<Path> {
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
 impl<'a> From<&'a Path> for Arc<Path> {
+    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
     #[inline]
     fn from(s: &Path) -> Arc<Path> {
         let arc: Arc<OsStr> = Arc::from(s.as_os_str());
@@ -1481,6 +1562,7 @@ impl<'a> From<&'a Path> for Arc<Path> {
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
 impl From<PathBuf> for Rc<Path> {
+    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
     #[inline]
     fn from(s: PathBuf) -> Rc<Path> {
         let rc: Rc<OsStr> = Rc::from(s.into_os_string());
@@ -1490,6 +1572,7 @@ impl From<PathBuf> for Rc<Path> {
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
 impl<'a> From<&'a Path> for Rc<Path> {
+    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
     #[inline]
     fn from(s: &Path) -> Rc<Path> {
         let rc: Rc<OsStr> = Rc::from(s.as_os_str());
@@ -1675,9 +1758,11 @@ impl Path {
 
     /// Converts a `Path` to a [`Cow<str>`].
     ///
-    /// Any non-Unicode sequences are replaced with U+FFFD REPLACEMENT CHARACTER.
+    /// Any non-Unicode sequences are replaced with
+    /// [`U+FFFD REPLACEMENT CHARACTER`][U+FFFD].
     ///
     /// [`Cow<str>`]: ../borrow/enum.Cow.html
+    /// [U+FFFD]: ../char/constant.REPLACEMENT_CHARACTER.html
     ///
     /// # Examples
     ///
@@ -1709,13 +1794,13 @@ impl Path {
     /// let path_buf = Path::new("foo.txt").to_path_buf();
     /// assert_eq!(path_buf, std::path::PathBuf::from("foo.txt"));
     /// ```
-    //- #[rustc_conversion_suggestion]
+    #[rustc_conversion_suggestion]
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn to_path_buf(&self) -> PathBuf {
         PathBuf::from(self.inner.to_os_string())
     }
 
-    /// Returns `true` if the `Path` is absolute, i.e. if it is independent of
+    /// Returns `true` if the `Path` is absolute, i.e., if it is independent of
     /// the current directory.
     ///
     /// * On Unix, a path is absolute if it starts with the root, so
@@ -1744,7 +1829,7 @@ impl Path {
         }
     }
 
-    /// Returns `true` if the `Path` is relative, i.e. not absolute.
+    /// Returns `true` if the `Path` is relative, i.e., not absolute.
     ///
     /// See [`is_absolute`]'s documentation for more details.
     ///
@@ -1771,9 +1856,9 @@ impl Path {
     /// * On Unix, a path has a root if it begins with `/`.
     ///
     /// * On Windows, a path has a root if it:
-    ///     * has no prefix and begins with a separator, e.g. `\\windows`
-    ///     * has a prefix followed by a separator, e.g. `c:\windows` but not `c:windows`
-    ///     * has any non-disk prefix, e.g. `\\server\share`
+    ///     * has no prefix and begins with a separator, e.g., `\windows`
+    ///     * has a prefix followed by a separator, e.g., `c:\windows` but not `c:windows`
+    ///     * has any non-disk prefix, e.g., `\\server\share`
     ///
     /// # Examples
     ///
@@ -1820,12 +1905,41 @@ impl Path {
         })
     }
 
+    /// Produces an iterator over `Path` and its ancestors.
+    ///
+    /// The iterator will yield the `Path` that is returned if the [`parent`] method is used zero
+    /// or more times. That means, the iterator will yield `&self`, `&self.parent().unwrap()`,
+    /// `&self.parent().unwrap().parent().unwrap()` and so on. If the [`parent`] method returns
+    /// [`None`], the iterator will do likewise. The iterator will always yield at least one value,
+    /// namely `&self`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::Path;
+    ///
+    /// let mut ancestors = Path::new("/foo/bar").ancestors();
+    /// assert_eq!(ancestors.next(), Some(Path::new("/foo/bar")));
+    /// assert_eq!(ancestors.next(), Some(Path::new("/foo")));
+    /// assert_eq!(ancestors.next(), Some(Path::new("/")));
+    /// assert_eq!(ancestors.next(), None);
+    /// ```
+    ///
+    /// [`None`]: ../../std/option/enum.Option.html#variant.None
+    /// [`parent`]: struct.Path.html#method.parent
+    #[stable(feature = "path_ancestors", since = "1.28.0")]
+    pub fn ancestors(&self) -> Ancestors {
+        Ancestors {
+            next: Some(&self),
+        }
+    }
+
     /// Returns the final component of the `Path`, if there is one.
     ///
     /// If the path is a normal file, this is the file name. If it's the path of a directory, this
     /// is the directory name.
     ///
-    /// Returns [`None`] If the path terminates in `..`.
+    /// Returns [`None`] if the path terminates in `..`.
     ///
     /// [`None`]: ../../std/option/enum.Option.html#variant.None
     ///
@@ -1856,7 +1970,7 @@ impl Path {
     ///
     /// # Errors
     ///
-    /// If `base` is not a prefix of `self` (i.e. [`starts_with`]
+    /// If `base` is not a prefix of `self` (i.e., [`starts_with`]
     /// returns `false`), returns [`Err`].
     ///
     /// [`starts_with`]: #method.starts_with
@@ -1865,24 +1979,31 @@ impl Path {
     /// # Examples
     ///
     /// ```
-    /// use std::path::Path;
+    /// use std::path::{Path, PathBuf};
     ///
     /// let path = Path::new("/test/haha/foo.txt");
     ///
+    /// assert_eq!(path.strip_prefix("/"), Ok(Path::new("test/haha/foo.txt")));
     /// assert_eq!(path.strip_prefix("/test"), Ok(Path::new("haha/foo.txt")));
+    /// assert_eq!(path.strip_prefix("/test/"), Ok(Path::new("haha/foo.txt")));
+    /// assert_eq!(path.strip_prefix("/test/haha/foo.txt"), Ok(Path::new("")));
+    /// assert_eq!(path.strip_prefix("/test/haha/foo.txt/"), Ok(Path::new("")));
     /// assert_eq!(path.strip_prefix("test").is_ok(), false);
     /// assert_eq!(path.strip_prefix("/haha").is_ok(), false);
+    ///
+    /// let prefix = PathBuf::from("/test/");
+    /// assert_eq!(path.strip_prefix(prefix), Ok(Path::new("haha/foo.txt")));
     /// ```
     #[stable(since = "1.7.0", feature = "path_strip_prefix")]
-    pub fn strip_prefix<'a, P: ?Sized>(&'a self, base: &'a P)
-                                       -> Result<&'a Path, StripPrefixError>
+    pub fn strip_prefix<P>(&self, base: P)
+                           -> Result<&Path, StripPrefixError>
         where P: AsRef<Path>
     {
         self._strip_prefix(base.as_ref())
     }
 
-    fn _strip_prefix<'a>(&'a self, base: &'a Path)
-                         -> Result<&'a Path, StripPrefixError> {
+    fn _strip_prefix(&self, base: &Path)
+                     -> Result<&Path, StripPrefixError> {
         iter_after(self.components(), base.components())
             .map(|c| c.as_path())
             .ok_or(StripPrefixError(()))
@@ -1900,6 +2021,9 @@ impl Path {
     /// let path = Path::new("/etc/passwd");
     ///
     /// assert!(path.starts_with("/etc"));
+    /// assert!(path.starts_with("/etc/"));
+    /// assert!(path.starts_with("/etc/passwd"));
+    /// assert!(path.starts_with("/etc/passwd/"));
     ///
     /// assert!(!path.starts_with("/e"));
     /// ```
@@ -2079,6 +2203,8 @@ impl Path {
     ///   `a/b` all have `a` and `b` as components, but `./a/b` starts with
     ///   an additional [`CurDir`] component.
     ///
+    /// * A trailing slash is normalized away, `/a/b` and `/a/b/` are equivalent.
+    ///
     /// Note that no other normalization takes place; in particular, `a/c`
     /// and `a/b/../c` are distinct, to account for the possibility that `b`
     /// is a symbolic link (so its parent isn't `a`).
@@ -2157,199 +2283,199 @@ impl Path {
         Display { path: self }
     }
 
-    /// Queries the file system to get information about a file, directory, etc.
-    ///
-    /// This function will traverse symbolic links to query information about the
-    /// destination file.
-    ///
-    /// This is an alias to [`fs::metadata`].
-    ///
-    /// [`fs::metadata`]: ../fs/fn.metadata.html
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    ///
-    /// let path = Path::new("/Minas/tirith");
-    /// let metadata = path.metadata().expect("metadata call failed");
-    /// println!("{:?}", metadata.file_type());
-    /// ```
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn metadata(&self) -> io::Result<fs::Metadata> {
-    //-     fs::metadata(self)
-    //- }
+    // /// Queries the file system to get information about a file, directory, etc.
+    // ///
+    // /// This function will traverse symbolic links to query information about the
+    // /// destination file.
+    // ///
+    // /// This is an alias to [`fs::metadata`].
+    // ///
+    // /// [`fs::metadata`]: ../fs/fn.metadata.html
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // ///
+    // /// let path = Path::new("/Minas/tirith");
+    // /// let metadata = path.metadata().expect("metadata call failed");
+    // /// println!("{:?}", metadata.file_type());
+    // /// ```
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn metadata(&self) -> io::Result<fs::Metadata> {
+    //     fs::metadata(self)
+    // }
 
-    /// Queries the metadata about a file without following symlinks.
-    ///
-    /// This is an alias to [`fs::symlink_metadata`].
-    ///
-    /// [`fs::symlink_metadata`]: ../fs/fn.symlink_metadata.html
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    ///
-    /// let path = Path::new("/Minas/tirith");
-    /// let metadata = path.symlink_metadata().expect("symlink_metadata call failed");
-    /// println!("{:?}", metadata.file_type());
-    /// ```
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn symlink_metadata(&self) -> io::Result<fs::Metadata> {
-    //-     fs::symlink_metadata(self)
-    //- }
+    // /// Queries the metadata about a file without following symlinks.
+    // ///
+    // /// This is an alias to [`fs::symlink_metadata`].
+    // ///
+    // /// [`fs::symlink_metadata`]: ../fs/fn.symlink_metadata.html
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // ///
+    // /// let path = Path::new("/Minas/tirith");
+    // /// let metadata = path.symlink_metadata().expect("symlink_metadata call failed");
+    // /// println!("{:?}", metadata.file_type());
+    // /// ```
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn symlink_metadata(&self) -> io::Result<fs::Metadata> {
+    //     fs::symlink_metadata(self)
+    // }
 
-    /// Returns the canonical form of the path with all intermediate components
-    /// normalized and symbolic links resolved.
-    ///
-    /// This is an alias to [`fs::canonicalize`].
-    ///
-    /// [`fs::canonicalize`]: ../fs/fn.canonicalize.html
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::{Path, PathBuf};
-    ///
-    /// let path = Path::new("/foo/test/../test/bar.rs");
-    /// assert_eq!(path.canonicalize().unwrap(), PathBuf::from("/foo/test/bar.rs"));
-    /// ```
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn canonicalize(&self) -> io::Result<PathBuf> {
-    //-     fs::canonicalize(self)
-    //- }
+    // /// Returns the canonical, absolute form of the path with all intermediate
+    // /// components normalized and symbolic links resolved.
+    // ///
+    // /// This is an alias to [`fs::canonicalize`].
+    // ///
+    // /// [`fs::canonicalize`]: ../fs/fn.canonicalize.html
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::{Path, PathBuf};
+    // ///
+    // /// let path = Path::new("/foo/test/../test/bar.rs");
+    // /// assert_eq!(path.canonicalize().unwrap(), PathBuf::from("/foo/test/bar.rs"));
+    // /// ```
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn canonicalize(&self) -> io::Result<PathBuf> {
+    //     fs::canonicalize(self)
+    // }
 
-    /// Reads a symbolic link, returning the file that the link points to.
-    ///
-    /// This is an alias to [`fs::read_link`].
-    ///
-    /// [`fs::read_link`]: ../fs/fn.read_link.html
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    ///
-    /// let path = Path::new("/laputa/sky_castle.rs");
-    /// let path_link = path.read_link().expect("read_link call failed");
-    /// ```
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn read_link(&self) -> io::Result<PathBuf> {
-    //-     fs::read_link(self)
-    //- }
+    // /// Reads a symbolic link, returning the file that the link points to.
+    // ///
+    // /// This is an alias to [`fs::read_link`].
+    // ///
+    // /// [`fs::read_link`]: ../fs/fn.read_link.html
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // ///
+    // /// let path = Path::new("/laputa/sky_castle.rs");
+    // /// let path_link = path.read_link().expect("read_link call failed");
+    // /// ```
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn read_link(&self) -> io::Result<PathBuf> {
+    //     fs::read_link(self)
+    // }
 
-    /// Returns an iterator over the entries within a directory.
-    ///
-    /// The iterator will yield instances of [`io::Result`]`<`[`DirEntry`]`>`. New
-    /// errors may be encountered after an iterator is initially constructed.
-    ///
-    /// This is an alias to [`fs::read_dir`].
-    ///
-    /// [`io::Result`]: ../io/type.Result.html
-    /// [`DirEntry`]: ../fs/struct.DirEntry.html
-    /// [`fs::read_dir`]: ../fs/fn.read_dir.html
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    ///
-    /// let path = Path::new("/laputa");
-    /// for entry in path.read_dir().expect("read_dir call failed") {
-    ///     if let Ok(entry) = entry {
-    ///         println!("{:?}", entry.path());
-    ///     }
-    /// }
-    /// ```
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn read_dir(&self) -> io::Result<fs::ReadDir> {
-    //-     fs::read_dir(self)
-    //- }
+    // /// Returns an iterator over the entries within a directory.
+    // ///
+    // /// The iterator will yield instances of [`io::Result`]`<`[`DirEntry`]`>`. New
+    // /// errors may be encountered after an iterator is initially constructed.
+    // ///
+    // /// This is an alias to [`fs::read_dir`].
+    // ///
+    // /// [`io::Result`]: ../io/type.Result.html
+    // /// [`DirEntry`]: ../fs/struct.DirEntry.html
+    // /// [`fs::read_dir`]: ../fs/fn.read_dir.html
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // ///
+    // /// let path = Path::new("/laputa");
+    // /// for entry in path.read_dir().expect("read_dir call failed") {
+    // ///     if let Ok(entry) = entry {
+    // ///         println!("{:?}", entry.path());
+    // ///     }
+    // /// }
+    // /// ```
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn read_dir(&self) -> io::Result<fs::ReadDir> {
+    //     fs::read_dir(self)
+    // }
 
-    /// Returns whether the path points at an existing entity.
-    ///
-    /// This function will traverse symbolic links to query information about the
-    /// destination file. In case of broken symbolic links this will return `false`.
-    ///
-    /// If you cannot access the directory containing the file, e.g. because of a
-    /// permission error, this will return `false`.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    /// assert_eq!(Path::new("does_not_exist.txt").exists(), false);
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// This is a convenience function that coerces errors to false. If you want to
-    /// check errors, call [fs::metadata].
-    ///
-    /// [fs::metadata]: ../../std/fs/fn.metadata.html
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn exists(&self) -> bool {
-    //-     fs::metadata(self).is_ok()
-    //- }
+    // /// Returns whether the path points at an existing entity.
+    // ///
+    // /// This function will traverse symbolic links to query information about the
+    // /// destination file. In case of broken symbolic links this will return `false`.
+    // ///
+    // /// If you cannot access the directory containing the file, e.g., because of a
+    // /// permission error, this will return `false`.
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // /// assert_eq!(Path::new("does_not_exist.txt").exists(), false);
+    // /// ```
+    // ///
+    // /// # See Also
+    // ///
+    // /// This is a convenience function that coerces errors to false. If you want to
+    // /// check errors, call [fs::metadata].
+    // ///
+    // /// [fs::metadata]: ../../std/fs/fn.metadata.html
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn exists(&self) -> bool {
+    //     fs::metadata(self).is_ok()
+    // }
 
-    /// Returns whether the path exists on disk and is pointing at a regular file.
-    ///
-    /// This function will traverse symbolic links to query information about the
-    /// destination file. In case of broken symbolic links this will return `false`.
-    ///
-    /// If you cannot access the directory containing the file, e.g. because of a
-    /// permission error, this will return `false`.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    /// assert_eq!(Path::new("./is_a_directory/").is_file(), false);
-    /// assert_eq!(Path::new("a_file.txt").is_file(), true);
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// This is a convenience function that coerces errors to false. If you want to
-    /// check errors, call [fs::metadata] and handle its Result. Then call
-    /// [fs::Metadata::is_file] if it was Ok.
-    ///
-    /// [fs::metadata]: ../../std/fs/fn.metadata.html
-    /// [fs::Metadata::is_file]: ../../std/fs/struct.Metadata.html#method.is_file
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn is_file(&self) -> bool {
-    //-     fs::metadata(self).map(|m| m.is_file()).unwrap_or(false)
-    //- }
+    // /// Returns whether the path exists on disk and is pointing at a regular file.
+    // ///
+    // /// This function will traverse symbolic links to query information about the
+    // /// destination file. In case of broken symbolic links this will return `false`.
+    // ///
+    // /// If you cannot access the directory containing the file, e.g., because of a
+    // /// permission error, this will return `false`.
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // /// assert_eq!(Path::new("./is_a_directory/").is_file(), false);
+    // /// assert_eq!(Path::new("a_file.txt").is_file(), true);
+    // /// ```
+    // ///
+    // /// # See Also
+    // ///
+    // /// This is a convenience function that coerces errors to false. If you want to
+    // /// check errors, call [fs::metadata] and handle its Result. Then call
+    // /// [fs::Metadata::is_file] if it was Ok.
+    // ///
+    // /// [fs::metadata]: ../../std/fs/fn.metadata.html
+    // /// [fs::Metadata::is_file]: ../../std/fs/struct.Metadata.html#method.is_file
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn is_file(&self) -> bool {
+    //     fs::metadata(self).map(|m| m.is_file()).unwrap_or(false)
+    // }
 
-    /// Returns whether the path exists on disk and is pointing at a directory.
-    ///
-    /// This function will traverse symbolic links to query information about the
-    /// destination file. In case of broken symbolic links this will return `false`.
-    ///
-    /// If you cannot access the directory containing the file, e.g. because of a
-    /// permission error, this will return `false`.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::path::Path;
-    /// assert_eq!(Path::new("./is_a_directory/").is_dir(), true);
-    /// assert_eq!(Path::new("a_file.txt").is_dir(), false);
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// This is a convenience function that coerces errors to false. If you want to
-    /// check errors, call [fs::metadata] and handle its Result. Then call
-    /// [fs::Metadata::is_dir] if it was Ok.
-    ///
-    /// [fs::metadata]: ../../std/fs/fn.metadata.html
-    /// [fs::Metadata::is_dir]: ../../std/fs/struct.Metadata.html#method.is_dir
-    //- #[stable(feature = "path_ext", since = "1.5.0")]
-    //- pub fn is_dir(&self) -> bool {
-    //-     fs::metadata(self).map(|m| m.is_dir()).unwrap_or(false)
-    //- }
+    // /// Returns whether the path exists on disk and is pointing at a directory.
+    // ///
+    // /// This function will traverse symbolic links to query information about the
+    // /// destination file. In case of broken symbolic links this will return `false`.
+    // ///
+    // /// If you cannot access the directory containing the file, e.g., because of a
+    // /// permission error, this will return `false`.
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```no_run
+    // /// use std::path::Path;
+    // /// assert_eq!(Path::new("./is_a_directory/").is_dir(), true);
+    // /// assert_eq!(Path::new("a_file.txt").is_dir(), false);
+    // /// ```
+    // ///
+    // /// # See Also
+    // ///
+    // /// This is a convenience function that coerces errors to false. If you want to
+    // /// check errors, call [fs::metadata] and handle its Result. Then call
+    // /// [fs::Metadata::is_dir] if it was Ok.
+    // ///
+    // /// [fs::metadata]: ../../std/fs/fn.metadata.html
+    // /// [fs::Metadata::is_dir]: ../../std/fs/struct.Metadata.html#method.is_dir
+    // #[stable(feature = "path_ext", since = "1.5.0")]
+    // pub fn is_dir(&self) -> bool {
+    //     fs::metadata(self).map(|m| m.is_dir()).unwrap_or(false)
+    // }
 
     /// Converts a [`Box<Path>`][`Box`] into a [`PathBuf`] without copying or
     /// allocating.

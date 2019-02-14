@@ -1,4 +1,4 @@
-use alloc::heap::{AllocErr, Layout};
+use alloc::alloc::{AllocErr, Layout};
 
 use allocator::util::*;
 

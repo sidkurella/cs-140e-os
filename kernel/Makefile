@@ -1,5 +1,5 @@
 TARGET ?= aarch64-none-elf
-CROSS ?= $(TARGET)
+CROSS ?= aarch64-linux-gnu
 
 CC := $(CROSS)-gcc
 TTYWRITE ?= ttywrite

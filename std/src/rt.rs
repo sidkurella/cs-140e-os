@@ -1,13 +1,3 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Runtime services
 //!
 //! The `rt` module provides a narrow set of runtime services,
@@ -29,7 +19,7 @@ pub use panicking::{begin_panic, begin_panic_fmt, update_panic_count};
 // To reduce the generated code of the new `lang_start`, this function is doing
 // the real work.
 #[cfg(not(test))]
-fn lang_start_internal(main: &(Fn() -> i32 + Sync + ::panic::RefUnwindSafe),
+fn lang_start_internal(main: &(dyn Fn() -> i32 + Sync + ::panic::RefUnwindSafe),
                        argc: isize, argv: *const *const u8) -> isize {
     use panic;
     use sys;
@@ -68,7 +58,7 @@ fn lang_start_internal(main: &(Fn() -> i32 + Sync + ::panic::RefUnwindSafe),
 
 #[cfg(not(test))]
 #[lang = "start"]
-fn lang_start<T: ::termination::Termination + 'static>
+fn lang_start<T: ::process::Termination + 'static>
     (main: fn() -> T, argc: isize, argv: *const *const u8) -> isize
 {
     lang_start_internal(&move || main().report(), argc, argv)

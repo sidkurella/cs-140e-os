@@ -1,13 +1,3 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! A "once initialization" primitive
 //!
 //! This primitive is meant to be used to run one-time initialization. An
@@ -31,12 +21,10 @@
 // initialization closure panics, the Once enters a "poisoned" state which means
 // that all future calls will immediately panic as well.
 //
-// So to implement this, one might first reach for a `StaticMutex`, but those
-// unfortunately need to be deallocated (e.g. call `destroy()`) to free memory
-// on all OSes (some of the BSDs allocate memory for mutexes). It also gets a
-// lot harder with poisoning to figure out when the mutex needs to be
-// deallocated because it's not after the closure finishes, but after the first
-// successful closure finishes.
+// So to implement this, one might first reach for a `Mutex`, but those cannot
+// be put into a `static`. It also gets a lot harder with poisoning to figure
+// out when the mutex needs to be deallocated because it's not after the closure
+// finishes, but after the first successful closure finishes.
 //
 // All in all, this is instead implemented with atomics and lock-free
 // operations! Whee! Each `Once` has one word of atomic state, and this state is
@@ -73,16 +61,17 @@ use thread::{self, Thread};
 /// A synchronization primitive which can be used to run a one-time global
 /// initialization. Useful for one-time initialization for FFI or related
 /// functionality. This type can only be constructed with the [`ONCE_INIT`]
-/// value.
+/// value or the equivalent [`Once::new`] constructor.
 ///
 /// [`ONCE_INIT`]: constant.ONCE_INIT.html
+/// [`Once::new`]: struct.Once.html#method.new
 ///
 /// # Examples
 ///
 /// ```
-/// use std::sync::{Once, ONCE_INIT};
+/// use std::sync::Once;
 ///
-/// static START: Once = ONCE_INIT;
+/// static START: Once = Once::new();
 ///
 /// START.call_once(|| {
 ///     // run initialization here
@@ -148,9 +137,9 @@ struct Waiter {
 
 // Helper struct used to clean up after a closure call with a `Drop`
 // implementation to also run on panic.
-struct Finish {
+struct Finish<'a> {
     panicked: bool,
-    me: &'static Once,
+    me: &'a Once,
 }
 
 impl Once {
@@ -177,16 +166,20 @@ impl Once {
     /// happens-before relation between the closure and code executing after the
     /// return).
     ///
+    /// If the given closure recursively invokes `call_once` on the same `Once`
+    /// instance the exact behavior is not specified, allowed outcomes are
+    /// a panic or a deadlock.
+    ///
     /// # Examples
     ///
     /// ```
-    /// use std::sync::{Once, ONCE_INIT};
+    /// use std::sync::Once;
     ///
     /// static mut VAL: usize = 0;
-    /// static INIT: Once = ONCE_INIT;
+    /// static INIT: Once = Once::new();
     ///
     /// // Accessing a `static mut` is unsafe much of the time, but if we do so
-    /// // in a synchronized fashion (e.g. write once or read all) then we're
+    /// // in a synchronized fashion (e.g., write once or read all) then we're
     /// // good to go!
     /// //
     /// // This function will only call `expensive_computation` once, and will
@@ -217,10 +210,10 @@ impl Once {
     ///
     /// [poison]: struct.Mutex.html#poisoning
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn call_once<F>(&'static self, f: F) where F: FnOnce() {
-        // Fast path, just see if we've completed initialization.
-        if self.state.load(Ordering::SeqCst) == COMPLETE {
-            return
+    pub fn call_once<F>(&self, f: F) where F: FnOnce() {
+        // Fast path check
+        if self.is_completed() {
+            return;
         }
 
         let mut f = Some(f);
@@ -229,7 +222,7 @@ impl Once {
 
     /// Performs the same function as [`call_once`] except ignores poisoning.
     ///
-    /// Unlike [`call_once`], if this `Once` has been poisoned (i.e. a previous
+    /// Unlike [`call_once`], if this `Once` has been poisoned (i.e., a previous
     /// call to `call_once` or `call_once_force` caused a panic), calling
     /// `call_once_force` will still invoke the closure `f` and will _not_
     /// result in an immediate panic. If `f` panics, the `Once` will remain
@@ -248,10 +241,10 @@ impl Once {
     /// ```
     /// #![feature(once_poison)]
     ///
-    /// use std::sync::{Once, ONCE_INIT};
+    /// use std::sync::Once;
     /// use std::thread;
     ///
-    /// static INIT: Once = ONCE_INIT;
+    /// static INIT: Once = Once::new();
     ///
     /// // poison the once
     /// let handle = thread::spawn(|| {
@@ -274,16 +267,66 @@ impl Once {
     /// INIT.call_once(|| {});
     /// ```
     #[unstable(feature = "once_poison", issue = "33577")]
-    pub fn call_once_force<F>(&'static self, f: F) where F: FnOnce(&OnceState) {
-        // same as above, just with a different parameter to `call_inner`.
-        if self.state.load(Ordering::SeqCst) == COMPLETE {
-            return
+    pub fn call_once_force<F>(&self, f: F) where F: FnOnce(&OnceState) {
+        // Fast path check
+        if self.is_completed() {
+            return;
         }
 
         let mut f = Some(f);
         self.call_inner(true, &mut |p| {
             f.take().unwrap()(&OnceState { poisoned: p })
         });
+    }
+
+    /// Returns true if some `call_once` call has completed
+    /// successfully. Specifically, `is_completed` will return false in
+    /// the following situations:
+    ///   * `call_once` was not called at all,
+    ///   * `call_once` was called, but has not yet completed,
+    ///   * the `Once` instance is poisoned
+    ///
+    /// It is also possible that immediately after `is_completed`
+    /// returns false, some other thread finishes executing
+    /// `call_once`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #![feature(once_is_completed)]
+    /// use std::sync::Once;
+    ///
+    /// static INIT: Once = Once::new();
+    ///
+    /// assert_eq!(INIT.is_completed(), false);
+    /// INIT.call_once(|| {
+    ///     assert_eq!(INIT.is_completed(), false);
+    /// });
+    /// assert_eq!(INIT.is_completed(), true);
+    /// ```
+    ///
+    /// ```
+    /// #![feature(once_is_completed)]
+    /// use std::sync::Once;
+    /// use std::thread;
+    ///
+    /// static INIT: Once = Once::new();
+    ///
+    /// assert_eq!(INIT.is_completed(), false);
+    /// let handle = thread::spawn(|| {
+    ///     INIT.call_once(|| panic!());
+    /// });
+    /// assert!(handle.join().is_err());
+    /// assert_eq!(INIT.is_completed(), false);
+    /// ```
+    #[unstable(feature = "once_is_completed", issue = "54890")]
+    #[inline]
+    pub fn is_completed(&self) -> bool {
+        // An `Acquire` load is enough because that makes all the initialization
+        // operations visible to us, and, this being a fast path, weaker
+        // ordering helps with performance. This `Acquire` synchronizes with
+        // `SeqCst` operations on the slow path.
+        self.state.load(Ordering::Acquire) == COMPLETE
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
@@ -298,9 +341,13 @@ impl Once {
     // currently no way to take an `FnOnce` and call it via virtual dispatch
     // without some allocation overhead.
     #[cold]
-    fn call_inner(&'static self,
+    fn call_inner(&self,
                   ignore_poisoning: bool,
-                  init: &mut FnMut(bool)) {
+                  init: &mut dyn FnMut(bool)) {
+
+        // This cold path uses SeqCst consistently because the
+        // performance difference really does not matter there, and
+        // SeqCst minimizes the chances of something going wrong.
         let mut state = self.state.load(Ordering::SeqCst);
 
         'outer: loop {
@@ -389,7 +436,7 @@ impl fmt::Debug for Once {
     }
 }
 
-impl Drop for Finish {
+impl<'a> Drop for Finish<'a> {
     fn drop(&mut self) {
         // Swap out our state with however we finished. We should only ever see
         // an old state which was RUNNING.
@@ -431,10 +478,10 @@ impl OnceState {
     /// ```
     /// #![feature(once_poison)]
     ///
-    /// use std::sync::{Once, ONCE_INIT};
+    /// use std::sync::Once;
     /// use std::thread;
     ///
-    /// static INIT: Once = ONCE_INIT;
+    /// static INIT: Once = Once::new();
     ///
     /// // poison the once
     /// let handle = thread::spawn(|| {
@@ -452,9 +499,9 @@ impl OnceState {
     /// ```
     /// #![feature(once_poison)]
     ///
-    /// use std::sync::{Once, ONCE_INIT};
+    /// use std::sync::Once;
     ///
-    /// static INIT: Once = ONCE_INIT;
+    /// static INIT: Once = Once::new();
     ///
     /// INIT.call_once_force(|state| {
     ///     assert!(!state.poisoned());

@@ -1,13 +1,3 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! A private parser implementation of IPv4, IPv6, and socket addresses.
 //!
 //! This module is "publicly exported" through the `FromStr` implementations
@@ -53,15 +43,12 @@ impl<'a> Parser<'a> {
         F: FnOnce(&mut Parser) -> Option<T>,
     {
         self.read_atomically(move |p| {
-            match cb(p) {
-                Some(x) => if p.is_eof() {Some(x)} else {None},
-                None => None,
-            }
+            cb(p).filter(|_| p.is_eof())
         })
     }
 
     // Return result of first successful parser
-    fn read_or<T>(&mut self, parsers: &mut [Box<FnMut(&mut Parser) -> Option<T> + 'static>])
+    fn read_or<T>(&mut self, parsers: &mut [Box<dyn FnMut(&mut Parser) -> Option<T> + 'static>])
                -> Option<T> {
         for pf in parsers {
             if let Some(r) = self.read_atomically(|p: &mut Parser| pf(p)) {
@@ -371,6 +358,25 @@ impl FromStr for SocketAddr {
 /// This error is used as the error type for the [`FromStr`] implementation for
 /// [`IpAddr`], [`Ipv4Addr`], [`Ipv6Addr`], [`SocketAddr`], [`SocketAddrV4`], and
 /// [`SocketAddrV6`].
+///
+/// # Potential causes
+///
+/// `AddrParseError` may be thrown because the provided string does not parse as the given type,
+/// often because it includes information only handled by a different address type.
+///
+/// ```should_panic
+/// use std::net::IpAddr;
+/// let _foo: IpAddr = "127.0.0.1:8080".parse().expect("Cannot handle the socket port");
+/// ```
+///
+/// [`IpAddr`] doesn't handle the port. Use [`SocketAddr`] instead.
+///
+/// ```
+/// use std::net::SocketAddr;
+///
+/// // No problem, the `panic!` message has disappeared.
+/// let _foo: SocketAddr = "127.0.0.1:8080".parse().expect("unreachable panic");
+/// ```
 ///
 /// [`FromStr`]: ../../std/str/trait.FromStr.html
 /// [`IpAddr`]: ../../std/net/enum.IpAddr.html

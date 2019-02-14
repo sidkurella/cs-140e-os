@@ -1,13 +1,3 @@
-// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Inspection and manipulation of the process's environment.
 //!
 //! This module contains functions to inspect various aspects such as
@@ -49,9 +39,11 @@ use sys::os as os_imp;
 /// ```
 /// use std::env;
 ///
-/// // We assume that we are in a valid directory.
-/// let path = env::current_dir().unwrap();
-/// println!("The current directory is {}", path.display());
+/// fn main() -> std::io::Result<()> {
+///     let path = env::current_dir()?;
+///     println!("The current directory is {}", path.display());
+///     Ok(())
+/// }
 /// ```
 #[stable(feature = "env", since = "1.0.0")]
 pub fn current_dir() -> io::Result<PathBuf> {
@@ -441,15 +433,18 @@ pub struct JoinPathsError {
 /// Joining paths on a Unix-like platform:
 ///
 /// ```
-/// # if cfg!(unix) {
 /// use std::env;
 /// use std::ffi::OsString;
 /// use std::path::Path;
 ///
-/// let paths = [Path::new("/bin"), Path::new("/usr/bin")];
-/// let path_os_string = env::join_paths(paths.iter()).unwrap();
-/// assert_eq!(path_os_string, OsString::from("/bin:/usr/bin"));
+/// fn main() -> Result<(), env::JoinPathsError> {
+/// # if cfg!(unix) {
+///     let paths = [Path::new("/bin"), Path::new("/usr/bin")];
+///     let path_os_string = env::join_paths(paths.iter())?;
+///     assert_eq!(path_os_string, OsString::from("/bin:/usr/bin"));
 /// # }
+///     Ok(())
+/// }
 /// ```
 ///
 /// Joining a path containing a colon on a Unix-like platform results in an error:
@@ -471,11 +466,15 @@ pub struct JoinPathsError {
 /// use std::env;
 /// use std::path::PathBuf;
 ///
-/// if let Some(path) = env::var_os("PATH") {
-///     let mut paths = env::split_paths(&path).collect::<Vec<_>>();
-///     paths.push(PathBuf::from("/home/xyz/bin"));
-///     let new_path = env::join_paths(paths).unwrap();
-///     env::set_var("PATH", &new_path);
+/// fn main() -> Result<(), env::JoinPathsError> {
+///     if let Some(path) = env::var_os("PATH") {
+///         let mut paths = env::split_paths(&path).collect::<Vec<_>>();
+///         paths.push(PathBuf::from("/home/xyz/bin"));
+///         let new_path = env::join_paths(paths)?;
+///         env::set_var("PATH", &new_path);
+///     }
+///
+///     Ok(())
 /// }
 /// ```
 #[stable(feature = "env", since = "1.0.0")]
@@ -503,18 +502,20 @@ impl Error for JoinPathsError {
 ///
 /// # Unix
 ///
-/// Returns the value of the 'HOME' environment variable if it is set
-/// and not equal to the empty string. Otherwise, it tries to determine the
-/// home directory by invoking the `getpwuid_r` function on the UID of the
-/// current user.
+/// - Returns the value of the 'HOME' environment variable if it is set
+///   (including to an empty string).
+/// - Otherwise, it tries to determine the home directory by invoking the `getpwuid_r` function
+///   using the UID of the current user. An empty home directory field returned from the
+///   `getpwuid_r` function is considered to be a valid value.
+/// - Returns `None` if the current user has no entry in the /etc/passwd file.
 ///
 /// # Windows
 ///
-/// Returns the value of the 'HOME' environment variable if it is
-/// set and not equal to the empty string. Otherwise, returns the value of the
-/// 'USERPROFILE' environment variable if it is set and not equal to the empty
-/// string. If both do not exist, [`GetUserProfileDirectory`][msdn] is used to
-/// return the appropriate path.
+/// - Returns the value of the 'HOME' environment variable if it is set
+///   (including to an empty string).
+/// - Otherwise, returns the value of the 'USERPROFILE' environment variable if it is set
+///   (including to an empty string).
+/// - If both do not exist, [`GetUserProfileDirectory`][msdn] is used to return the path.
 ///
 /// [msdn]: https://msdn.microsoft.com/en-us/library/windows/desktop/bb762280(v=vs.85).aspx
 ///
@@ -524,10 +525,13 @@ impl Error for JoinPathsError {
 /// use std::env;
 ///
 /// match env::home_dir() {
-///     Some(path) => println!("{}", path.display()),
+///     Some(path) => println!("Your home directory, probably: {}", path.display()),
 ///     None => println!("Impossible to get your home dir!"),
 /// }
 /// ```
+#[rustc_deprecated(since = "1.29.0",
+    reason = "This function's behavior is unexpected and probably not what you want. \
+              Consider using the home_dir function from https://crates.io/crates/dirs instead.")]
 #[stable(feature = "env", since = "1.0.0")]
 pub fn home_dir() -> Option<PathBuf> {
     os_imp::home_dir()
@@ -552,17 +556,17 @@ pub fn home_dir() -> Option<PathBuf> {
 ///
 /// [msdn]: https://msdn.microsoft.com/en-us/library/windows/desktop/aa364992(v=vs.85).aspx
 ///
-/// ```
+/// ```no_run
 /// use std::env;
 /// use std::fs::File;
 ///
-/// # fn foo() -> std::io::Result<()> {
-/// let mut dir = env::temp_dir();
-/// dir.push("foo.txt");
+/// fn main() -> std::io::Result<()> {
+///     let mut dir = env::temp_dir();
+///     dir.push("foo.txt");
 ///
-/// let f = File::create(dir)?;
-/// # Ok(())
-/// # }
+///     let f = File::create(dir)?;
+///     Ok(())
+/// }
 /// ```
 #[stable(feature = "env", since = "1.0.0")]
 pub fn temp_dir() -> PathBuf {
@@ -723,6 +727,12 @@ pub fn args_os() -> ArgsOs {
     ArgsOs { inner: sys::args::args() }
 }
 
+#[stable(feature = "env_unimpl_send_sync", since = "1.26.0")]
+impl !Send for Args {}
+
+#[stable(feature = "env_unimpl_send_sync", since = "1.26.0")]
+impl !Sync for Args {}
+
 #[stable(feature = "env", since = "1.0.0")]
 impl Iterator for Args {
     type Item = String;
@@ -753,6 +763,12 @@ impl fmt::Debug for Args {
             .finish()
     }
 }
+
+#[stable(feature = "env_unimpl_send_sync", since = "1.26.0")]
+impl !Send for ArgsOs {}
+
+#[stable(feature = "env_unimpl_send_sync", since = "1.26.0")]
+impl !Sync for ArgsOs {}
 
 #[stable(feature = "env", since = "1.0.0")]
 impl Iterator for ArgsOs {
@@ -802,7 +818,7 @@ pub mod consts {
     /// - s390x
     /// - sparc64
     #[stable(feature = "env", since = "1.0.0")]
-    pub const ARCH: &'static str = super::arch::ARCH;
+    pub const ARCH: &str = super::arch::ARCH;
 
     /// The family of the operating system. Example value is `unix`.
     ///
@@ -811,7 +827,7 @@ pub mod consts {
     /// - unix
     /// - windows
     #[stable(feature = "env", since = "1.0.0")]
-    pub const FAMILY: &'static str = os::FAMILY;
+    pub const FAMILY: &str = os::FAMILY;
 
     /// A string describing the specific operating system in use.
     /// Example value is `linux`.
@@ -830,7 +846,7 @@ pub mod consts {
     /// - android
     /// - windows
     #[stable(feature = "env", since = "1.0.0")]
-    pub const OS: &'static str = os::OS;
+    pub const OS: &str = os::OS;
 
     /// Specifies the filename prefix used for shared libraries on this
     /// platform. Example value is `lib`.
@@ -840,7 +856,7 @@ pub mod consts {
     /// - lib
     /// - `""` (an empty string)
     #[stable(feature = "env", since = "1.0.0")]
-    pub const DLL_PREFIX: &'static str = os::DLL_PREFIX;
+    pub const DLL_PREFIX: &str = os::DLL_PREFIX;
 
     /// Specifies the filename suffix used for shared libraries on this
     /// platform. Example value is `.so`.
@@ -851,7 +867,7 @@ pub mod consts {
     /// - .dylib
     /// - .dll
     #[stable(feature = "env", since = "1.0.0")]
-    pub const DLL_SUFFIX: &'static str = os::DLL_SUFFIX;
+    pub const DLL_SUFFIX: &str = os::DLL_SUFFIX;
 
     /// Specifies the file extension used for shared libraries on this
     /// platform that goes after the dot. Example value is `so`.
@@ -862,7 +878,7 @@ pub mod consts {
     /// - dylib
     /// - dll
     #[stable(feature = "env", since = "1.0.0")]
-    pub const DLL_EXTENSION: &'static str = os::DLL_EXTENSION;
+    pub const DLL_EXTENSION: &str = os::DLL_EXTENSION;
 
     /// Specifies the filename suffix used for executable binaries on this
     /// platform. Example value is `.exe`.
@@ -874,7 +890,7 @@ pub mod consts {
     /// - .pexe
     /// - `""` (an empty string)
     #[stable(feature = "env", since = "1.0.0")]
-    pub const EXE_SUFFIX: &'static str = os::EXE_SUFFIX;
+    pub const EXE_SUFFIX: &str = os::EXE_SUFFIX;
 
     /// Specifies the file extension, if any, used for executable binaries
     /// on this platform. Example value is `exe`.
@@ -884,72 +900,72 @@ pub mod consts {
     /// - exe
     /// - `""` (an empty string)
     #[stable(feature = "env", since = "1.0.0")]
-    pub const EXE_EXTENSION: &'static str = os::EXE_EXTENSION;
+    pub const EXE_EXTENSION: &str = os::EXE_EXTENSION;
 }
 
 #[cfg(target_arch = "x86")]
 mod arch {
-    pub const ARCH: &'static str = "x86";
+    pub const ARCH: &str = "x86";
 }
 
 #[cfg(target_arch = "x86_64")]
 mod arch {
-    pub const ARCH: &'static str = "x86_64";
+    pub const ARCH: &str = "x86_64";
 }
 
 #[cfg(target_arch = "arm")]
 mod arch {
-    pub const ARCH: &'static str = "arm";
+    pub const ARCH: &str = "arm";
 }
 
 #[cfg(target_arch = "aarch64")]
 mod arch {
-    pub const ARCH: &'static str = "aarch64";
+    pub const ARCH: &str = "aarch64";
 }
 
 #[cfg(target_arch = "mips")]
 mod arch {
-    pub const ARCH: &'static str = "mips";
+    pub const ARCH: &str = "mips";
 }
 
 #[cfg(target_arch = "mips64")]
 mod arch {
-    pub const ARCH: &'static str = "mips64";
+    pub const ARCH: &str = "mips64";
 }
 
 #[cfg(target_arch = "powerpc")]
 mod arch {
-    pub const ARCH: &'static str = "powerpc";
+    pub const ARCH: &str = "powerpc";
 }
 
 #[cfg(target_arch = "powerpc64")]
 mod arch {
-    pub const ARCH: &'static str = "powerpc64";
+    pub const ARCH: &str = "powerpc64";
 }
 
 #[cfg(target_arch = "s390x")]
 mod arch {
-    pub const ARCH: &'static str = "s390x";
+    pub const ARCH: &str = "s390x";
 }
 
 #[cfg(target_arch = "sparc64")]
 mod arch {
-    pub const ARCH: &'static str = "sparc64";
+    pub const ARCH: &str = "sparc64";
 }
 
 #[cfg(target_arch = "le32")]
 mod arch {
-    pub const ARCH: &'static str = "le32";
+    pub const ARCH: &str = "le32";
 }
 
 #[cfg(target_arch = "asmjs")]
 mod arch {
-    pub const ARCH: &'static str = "asmjs";
+    pub const ARCH: &str = "asmjs";
 }
 
 #[cfg(target_arch = "wasm32")]
 mod arch {
-    pub const ARCH: &'static str = "wasm32";
+    pub const ARCH: &str = "wasm32";
 }
 
 #[cfg(test)]

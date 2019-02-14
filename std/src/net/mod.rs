@@ -1,13 +1,3 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Networking primitives for TCP/UDP communication.
 //!
 //! This module provides networking functionality for the Transmission Control and User
@@ -38,9 +28,7 @@
 
 #![stable(feature = "rust1", since = "1.0.0")]
 
-use fmt;
 use io::{self, Error, ErrorKind};
-use sys_common::net as net_imp;
 
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use self::ip::{IpAddr, Ipv4Addr, Ipv6Addr, Ipv6MulticastScope};
@@ -114,11 +102,15 @@ fn hton<I: NetInt>(i: I) -> I { i.to_be() }
 fn ntoh<I: NetInt>(i: I) -> I { I::from_be(i) }
 
 fn each_addr<A: ToSocketAddrs, F, T>(addr: A, mut f: F) -> io::Result<T>
-    where F: FnMut(&SocketAddr) -> io::Result<T>
+    where F: FnMut(io::Result<&SocketAddr>) -> io::Result<T>
 {
+    let addrs = match addr.to_socket_addrs() {
+        Ok(addrs) => addrs,
+        Err(e) => return f(Err(e))
+    };
     let mut last_err = None;
-    for addr in addr.to_socket_addrs()? {
-        match f(&addr) {
+    for addr in addrs {
+        match f(Ok(&addr)) {
             Ok(l) => return Ok(l),
             Err(e) => last_err = Some(e),
         }
@@ -127,60 +119,4 @@ fn each_addr<A: ToSocketAddrs, F, T>(addr: A, mut f: F) -> io::Result<T>
         Error::new(ErrorKind::InvalidInput,
                    "could not resolve to any addresses")
     }))
-}
-
-/// An iterator over `SocketAddr` values returned from a host lookup operation.
-#[unstable(feature = "lookup_host", reason = "unsure about the returned \
-                                              iterator and returning socket \
-                                              addresses",
-           issue = "27705")]
-pub struct LookupHost(net_imp::LookupHost);
-
-#[unstable(feature = "lookup_host", reason = "unsure about the returned \
-                                              iterator and returning socket \
-                                              addresses",
-           issue = "27705")]
-impl Iterator for LookupHost {
-    type Item = SocketAddr;
-    fn next(&mut self) -> Option<SocketAddr> { self.0.next() }
-}
-
-#[unstable(feature = "lookup_host", reason = "unsure about the returned \
-                                              iterator and returning socket \
-                                              addresses",
-           issue = "27705")]
-impl fmt::Debug for LookupHost {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad("LookupHost { .. }")
-    }
-}
-
-/// Resolve the host specified by `host` as a number of `SocketAddr` instances.
-///
-/// This method may perform a DNS query to resolve `host` and may also inspect
-/// system configuration to resolve the specified hostname.
-///
-/// The returned iterator will skip over any unknown addresses returned by the
-/// operating system.
-///
-/// # Examples
-///
-/// ```no_run
-/// #![feature(lookup_host)]
-///
-/// use std::net;
-///
-/// # fn foo() -> std::io::Result<()> {
-/// for host in net::lookup_host("rust-lang.org")? {
-///     println!("found address: {}", host);
-/// }
-/// # Ok(())
-/// # }
-/// ```
-#[unstable(feature = "lookup_host", reason = "unsure about the returned \
-                                              iterator and returning socket \
-                                              addresses",
-           issue = "27705")]
-pub fn lookup_host(host: &str) -> io::Result<LookupHost> {
-    net_imp::lookup_host(host).map(LookupHost)
 }

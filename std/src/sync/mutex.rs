@@ -1,13 +1,3 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use cell::UnsafeCell;
 use fmt;
 use mem;
@@ -69,7 +59,7 @@ use sys_common::poison::{self, TryLockError, TryLockResult, LockResult};
 ///
 /// let (tx, rx) = channel();
 /// for _ in 0..N {
-///     let (data, tx) = (data.clone(), tx.clone());
+///     let (data, tx) = (Arc::clone(&data), tx.clone());
 ///     thread::spawn(move || {
 ///         // The shared state can only be accessed once the lock is held.
 ///         // Our non-atomic increment is safe because we're the only thread
@@ -150,7 +140,7 @@ unsafe impl<T: ?Sized + Send> Sync for Mutex<T> { }
 /// [`lock`]: struct.Mutex.html#method.lock
 /// [`try_lock`]: struct.Mutex.html#method.try_lock
 /// [`Mutex`]: struct.Mutex.html
-#[must_use]
+#[must_use = "if unused the Mutex will immediately unlock"]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
     // funny underscores due to how Deref/DerefMut currently work (they
@@ -227,7 +217,7 @@ impl<T: ?Sized> Mutex<T> {
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn lock(&self) -> LockResult<MutexGuard<T>> {
         unsafe {
-            self.inner.lock();
+            self.inner.raw_lock();
             MutexGuard::new(self)
         }
     }
@@ -386,8 +376,6 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Mutex<T> {
 impl<T> From<T> for Mutex<T> {
     /// Creates a new mutex in an unlocked state ready for use.
     /// This is equivalent to [`Mutex::new`].
-    ///
-    /// [`Mutex::new`]: #method.new
     fn from(t: T) -> Self {
         Mutex::new(t)
     }
@@ -454,7 +442,7 @@ impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
         unsafe {
             self.__lock.poison.done(&self.__poison);
-            self.__lock.inner.unlock();
+            self.__lock.inner.raw_unlock();
         }
     }
 }
@@ -462,9 +450,7 @@ impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
 #[stable(feature = "std_debug", since = "1.16.0")]
 impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("MutexGuard")
-            .field("lock", &self.__lock)
-            .finish()
+        fmt::Debug::fmt(&**self, f)
     }
 }
 

@@ -1,13 +1,3 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! A module for working with processes.
 //!
 //! This module is mostly concerned with spawning and interacting with child
@@ -381,6 +371,39 @@ impl fmt::Debug for ChildStderr {
 ///
 /// let hello = output.stdout;
 /// ```
+///
+/// `Command` can be reused to spawn multiple processes. The builder methods
+/// change the command without needing to immediately spawn the process.
+///
+/// ```no_run
+/// use std::process::Command;
+///
+/// let mut echo_hello = Command::new("sh");
+/// echo_hello.arg("-c")
+///           .arg("echo hello");
+/// let hello_1 = echo_hello.output().expect("failed to execute process");
+/// let hello_2 = echo_hello.output().expect("failed to execute process");
+/// ```
+///
+/// Similarly, you can call builder methods after spawning a process and then
+/// spawn a new process with the modified settings.
+///
+/// ```no_run
+/// use std::process::Command;
+///
+/// let mut list_dir = Command::new("ls");
+///
+/// // Execute `ls` in the current directory of the program.
+/// list_dir.status().expect("process failed to execute");
+///
+/// println!("");
+///
+/// // Change `ls` to execute in the root directory.
+/// list_dir.current_dir("/");
+///
+/// // And then execute `ls` again but in the root directory.
+/// list_dir.status().expect("process failed to execute");
+/// ```
 #[stable(feature = "process", since = "1.0.0")]
 pub struct Command {
     inner: imp::Command,
@@ -593,6 +616,14 @@ impl Command {
 
     /// Sets the working directory for the child process.
     ///
+    /// # Platform-specific behavior
+    ///
+    /// If the program path is relative (e.g., `"./script.sh"`), it's ambiguous
+    /// whether it should be interpreted relative to the parent's working
+    /// directory or relative to `current_dir`. The behavior in this case is
+    /// platform specific and unstable, and it's recommended to use
+    /// [`canonicalize`] to get an absolute program path instead.
+    ///
     /// # Examples
     ///
     /// Basic usage:
@@ -605,6 +636,8 @@ impl Command {
     ///         .spawn()
     ///         .expect("ls command failed to start");
     /// ```
+    ///
+    /// [`canonicalize`]: ../fs/fn.canonicalize.html
     #[stable(feature = "process", since = "1.0.0")]
     pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Command {
         self.inner.cwd(dir.as_ref().as_ref());
@@ -721,14 +754,15 @@ impl Command {
     ///
     /// ```should_panic
     /// use std::process::Command;
+    /// use std::io::{self, Write};
     /// let output = Command::new("/bin/cat")
     ///                      .arg("file.txt")
     ///                      .output()
     ///                      .expect("failed to execute process");
     ///
     /// println!("status: {}", output.status);
-    /// println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-    /// println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    /// io::stdout().write_all(&output.stdout).unwrap();
+    /// io::stderr().write_all(&output.stderr).unwrap();
     ///
     /// assert!(output.status.success());
     /// ```
@@ -813,13 +847,13 @@ impl fmt::Debug for Output {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
 
         let stdout_utf8 = str::from_utf8(&self.stdout);
-        let stdout_debug: &fmt::Debug = match stdout_utf8 {
+        let stdout_debug: &dyn fmt::Debug = match stdout_utf8 {
             Ok(ref str) => str,
             Err(_) => &self.stdout
         };
 
         let stderr_utf8 = str::from_utf8(&self.stderr);
-        let stderr_debug: &fmt::Debug = match stderr_utf8 {
+        let stderr_debug: &dyn fmt::Debug = match stderr_utf8 {
             Ok(ref str) => str,
             Err(_) => &self.stderr
         };
@@ -908,6 +942,7 @@ impl Stdio {
     ///
     /// ```no_run
     /// use std::process::{Command, Stdio};
+    /// use std::io::{self, Write};
     ///
     /// let output = Command::new("rev")
     ///     .stdin(Stdio::inherit())
@@ -915,7 +950,8 @@ impl Stdio {
     ///     .output()
     ///     .expect("Failed to execute command");
     ///
-    /// println!("You piped in the reverse of: {}", String::from_utf8_lossy(&output.stdout));
+    /// print!("You piped in the reverse of: ");
+    /// io::stdout().write_all(&output.stdout).unwrap();
     /// ```
     #[stable(feature = "process", since = "1.0.0")]
     pub fn inherit() -> Stdio { Stdio(imp::Stdio::Inherit) }
@@ -973,6 +1009,28 @@ impl fmt::Debug for Stdio {
 
 #[stable(feature = "stdio_from", since = "1.20.0")]
 impl From<ChildStdin> for Stdio {
+    /// Converts a `ChildStdin` into a `Stdio`
+    ///
+    /// # Examples
+    ///
+    /// `ChildStdin` will be converted to `Stdio` using `Stdio::from` under the hood.
+    ///
+    /// ```rust
+    /// use std::process::{Command, Stdio};
+    ///
+    /// let reverse = Command::new("rev")
+    ///     .stdin(Stdio::piped())
+    ///     .spawn()
+    ///     .expect("failed reverse command");
+    ///
+    /// let _echo = Command::new("echo")
+    ///     .arg("Hello, world!")
+    ///     .stdout(reverse.stdin.unwrap()) // Converted into a Stdio here
+    ///     .output()
+    ///     .expect("failed echo command");
+    ///
+    /// // "!dlrow ,olleH" echoed to console
+    /// ```
     fn from(child: ChildStdin) -> Stdio {
         Stdio::from_inner(child.into_inner().into())
     }
@@ -980,6 +1038,28 @@ impl From<ChildStdin> for Stdio {
 
 #[stable(feature = "stdio_from", since = "1.20.0")]
 impl From<ChildStdout> for Stdio {
+    /// Converts a `ChildStdout` into a `Stdio`
+    ///
+    /// # Examples
+    ///
+    /// `ChildStdout` will be converted to `Stdio` using `Stdio::from` under the hood.
+    ///
+    /// ```rust
+    /// use std::process::{Command, Stdio};
+    ///
+    /// let hello = Command::new("echo")
+    ///     .arg("Hello, world!")
+    ///     .stdout(Stdio::piped())
+    ///     .spawn()
+    ///     .expect("failed echo command");
+    ///
+    /// let reverse = Command::new("rev")
+    ///     .stdin(hello.stdout.unwrap())  // Converted into a Stdio here
+    ///     .output()
+    ///     .expect("failed reverse command");
+    ///
+    /// assert_eq!(reverse.stdout, b"!dlrow ,olleH\n");
+    /// ```
     fn from(child: ChildStdout) -> Stdio {
         Stdio::from_inner(child.into_inner().into())
     }
@@ -987,6 +1067,30 @@ impl From<ChildStdout> for Stdio {
 
 #[stable(feature = "stdio_from", since = "1.20.0")]
 impl From<ChildStderr> for Stdio {
+    /// Converts a `ChildStderr` into a `Stdio`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use std::process::{Command, Stdio};
+    ///
+    /// let reverse = Command::new("rev")
+    ///     .arg("non_existing_file.txt")
+    ///     .stderr(Stdio::piped())
+    ///     .spawn()
+    ///     .expect("failed reverse command");
+    ///
+    /// let cat = Command::new("cat")
+    ///     .arg("-")
+    ///     .stdin(reverse.stderr.unwrap()) // Converted into a Stdio here
+    ///     .output()
+    ///     .expect("failed echo command");
+    ///
+    /// assert_eq!(
+    ///     String::from_utf8_lossy(&cat.stdout),
+    ///     "rev: cannot open non_existing_file.txt: No such file or directory\n"
+    /// );
+    /// ```
     fn from(child: ChildStderr) -> Stdio {
         Stdio::from_inner(child.into_inner().into())
     }
@@ -994,6 +1098,26 @@ impl From<ChildStderr> for Stdio {
 
 #[stable(feature = "stdio_from", since = "1.20.0")]
 impl From<fs::File> for Stdio {
+    /// Converts a `File` into a `Stdio`
+    ///
+    /// # Examples
+    ///
+    /// `File` will be converted to `Stdio` using `Stdio::from` under the hood.
+    ///
+    /// ```rust,no_run
+    /// use std::fs::File;
+    /// use std::process::Command;
+    ///
+    /// // With the `foo.txt` file containing `Hello, world!"
+    /// let file = File::open("foo.txt").unwrap();
+    ///
+    /// let reverse = Command::new("rev")
+    ///     .stdin(file)  // Implicit File conversion into a Stdio
+    ///     .output()
+    ///     .expect("failed reverse command");
+    ///
+    /// assert_eq!(reverse.stdout, b"!dlrow ,olleH");
+    /// ```
     fn from(file: fs::File) -> Stdio {
         Stdio::from_inner(file.into_inner().into())
     }
@@ -1080,9 +1204,54 @@ impl fmt::Display for ExitStatus {
     }
 }
 
+/// This type represents the status code a process can return to its
+/// parent under normal termination.
+///
+/// Numeric values used in this type don't have portable meanings, and
+/// different platforms may mask different amounts of them.
+///
+/// For the platform's canonical successful and unsuccessful codes, see
+/// the [`SUCCESS`] and [`FAILURE`] associated items.
+///
+/// [`SUCCESS`]: #associatedconstant.SUCCESS
+/// [`FAILURE`]: #associatedconstant.FAILURE
+///
+/// **Warning**: While various forms of this were discussed in [RFC #1937],
+/// it was ultimately cut from that RFC, and thus this type is more subject
+/// to change even than the usual unstable item churn.
+///
+/// [RFC #1937]: https://github.com/rust-lang/rfcs/pull/1937
+#[derive(Clone, Copy, Debug)]
+#[unstable(feature = "process_exitcode_placeholder", issue = "48711")]
+pub struct ExitCode(imp::ExitCode);
+
+#[unstable(feature = "process_exitcode_placeholder", issue = "48711")]
+impl ExitCode {
+    /// The canonical ExitCode for successful termination on this platform.
+    ///
+    /// Note that a `()`-returning `main` implicitly results in a successful
+    /// termination, so there's no need to return this from `main` unless
+    /// you're also returning other possible codes.
+    #[unstable(feature = "process_exitcode_placeholder", issue = "48711")]
+    pub const SUCCESS: ExitCode = ExitCode(imp::ExitCode::SUCCESS);
+
+    /// The canonical ExitCode for unsuccessful termination on this platform.
+    ///
+    /// If you're only returning this and `SUCCESS` from `main`, consider
+    /// instead returning `Err(_)` and `Ok(())` respectively, which will
+    /// return the same codes (but will also `eprintln!` the error).
+    #[unstable(feature = "process_exitcode_placeholder", issue = "48711")]
+    pub const FAILURE: ExitCode = ExitCode(imp::ExitCode::FAILURE);
+}
+
 impl Child {
-    /// Forces the child to exit. This is equivalent to sending a
-    /// SIGKILL on unix platforms.
+    /// Forces the child process to exit. If the child has already exited, an [`InvalidInput`]
+    /// error is returned.
+    ///
+    /// The mapping to [`ErrorKind`]s is not part of the compatibility contract of the function,
+    /// especially the [`Other`] kind might change to more specific kinds in the future.
+    ///
+    /// This is equivalent to sending a SIGKILL on Unix platforms.
     ///
     /// # Examples
     ///
@@ -1098,6 +1267,10 @@ impl Child {
     ///     println!("yes command didn't start");
     /// }
     /// ```
+    ///
+    /// [`ErrorKind`]: ../io/enum.ErrorKind.html
+    /// [`InvalidInput`]: ../io/enum.ErrorKind.html#variant.InvalidInput
+    /// [`Other`]: ../io/enum.ErrorKind.html#variant.Other
     #[stable(feature = "process", since = "1.0.0")]
     pub fn kill(&mut self) -> io::Result<()> {
         self.handle.kill()
@@ -1157,7 +1330,7 @@ impl Child {
     /// Attempts to collect the exit status of the child if it has already
     /// exited.
     ///
-    /// This function will not block the calling thread and will only advisorily
+    /// This function will not block the calling thread and will only
     /// check to see if the child process has exited or not. If the child has
     /// exited then on Unix the process id is reaped. This function is
     /// guaranteed to repeatedly return a successful exit status so long as the
@@ -1380,16 +1553,72 @@ pub fn abort() -> ! {
 /// Basic usage:
 ///
 /// ```no_run
-/// #![feature(getpid)]
 /// use std::process;
 ///
 /// println!("My pid is {}", process::id());
 /// ```
 ///
 ///
-#[unstable(feature = "getpid", issue = "44971", reason = "recently added")]
+#[stable(feature = "getpid", since = "1.26.0")]
 pub fn id() -> u32 {
     ::sys::os::getpid()
+}
+
+/// A trait for implementing arbitrary return types in the `main` function.
+///
+/// The c-main function only supports to return integers as return type.
+/// So, every type implementing the `Termination` trait has to be converted
+/// to an integer.
+///
+/// The default implementations are returning `libc::EXIT_SUCCESS` to indicate
+/// a successful execution. In case of a failure, `libc::EXIT_FAILURE` is returned.
+#[cfg_attr(not(test), lang = "termination")]
+#[unstable(feature = "termination_trait_lib", issue = "43301")]
+#[rustc_on_unimplemented(
+  message="`main` has invalid return type `{Self}`",
+  label="`main` can only return types that implement `{Termination}`")]
+pub trait Termination {
+    /// Is called to get the representation of the value as status code.
+    /// This status code is returned to the operating system.
+    fn report(self) -> i32;
+}
+
+#[unstable(feature = "termination_trait_lib", issue = "43301")]
+impl Termination for () {
+    #[inline]
+    fn report(self) -> i32 { ExitCode::SUCCESS.report() }
+}
+
+#[unstable(feature = "termination_trait_lib", issue = "43301")]
+impl<E: fmt::Debug> Termination for Result<(), E> {
+    fn report(self) -> i32 {
+        match self {
+            Ok(()) => ().report(),
+            Err(err) => Err::<!, _>(err).report(),
+        }
+    }
+}
+
+#[unstable(feature = "termination_trait_lib", issue = "43301")]
+impl Termination for ! {
+    fn report(self) -> i32 { self }
+}
+
+#[unstable(feature = "termination_trait_lib", issue = "43301")]
+impl<E: fmt::Debug> Termination for Result<!, E> {
+    fn report(self) -> i32 {
+        let Err(err) = self;
+        eprintln!("Error: {:?}", err);
+        ExitCode::FAILURE.report()
+    }
+}
+
+#[unstable(feature = "termination_trait_lib", issue = "43301")]
+impl Termination for ExitCode {
+    #[inline]
+    fn report(self) -> i32 {
+        self.0.as_i32()
+    }
 }
 
 #[cfg(all(test, not(any(target_os = "cloudabi", target_os = "emscripten"))))]
@@ -1651,42 +1880,6 @@ mod tests {
     }
 
     #[test]
-    fn test_inherit_env() {
-        use env;
-
-        let result = env_cmd().output().unwrap();
-        let output = String::from_utf8(result.stdout).unwrap();
-
-        for (ref k, ref v) in env::vars() {
-            // Don't check android RANDOM variable which seems to change
-            // whenever the shell runs, and our `env_cmd` is indeed running a
-            // shell which means it'll get a different RANDOM than we probably
-            // have.
-            //
-            // Also skip env vars with `-` in the name on android because, well,
-            // I'm not sure. It appears though that the `set` command above does
-            // not print env vars with `-` in the name, so we just skip them
-            // here as we won't find them in the output. Note that most env vars
-            // use `_` instead of `-`, but our build system sets a few env vars
-            // with `-` in the name.
-            if cfg!(target_os = "android") &&
-               (*k == "RANDOM" || k.contains("-")) {
-                continue
-            }
-
-            // Windows has hidden environment variables whose names start with
-            // equals signs (`=`). Those do not show up in the output of the
-            // `set` command.
-            assert!((cfg!(windows) && k.starts_with("=")) ||
-                    k.starts_with("DYLD") ||
-                    output.contains(&format!("{}={}", *k, *v)) ||
-                    output.contains(&format!("{}='{}'", *k, *v)),
-                    "output doesn't contain `{}={}`\n{}",
-                    k, v, output);
-        }
-    }
-
-    #[test]
     fn test_override_env() {
         use env;
 
@@ -1842,5 +2035,11 @@ mod tests {
             }
         }
         assert!(events > 0);
+    }
+
+    #[test]
+    fn test_command_implements_send() {
+        fn take_send_type<T: Send>(_: T) {}
+        take_send_type(Command::new(""))
     }
 }

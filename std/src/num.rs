@@ -1,13 +1,3 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Additional functionality for numerics.
 //!
 //! This module provides some extra types that are useful when doing numerical
@@ -20,6 +10,9 @@
 pub use core::num::{FpCategory, ParseIntError, ParseFloatError, TryFromIntError};
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use core::num::Wrapping;
+
+#[stable(feature = "nonzero", since = "1.28.0")]
+pub use core::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize};
 
 #[cfg(test)] use fmt;
 #[cfg(test)] use ops::{Add, Sub, Mul, Div, Rem};
@@ -169,7 +162,6 @@ mod tests {
 
     macro_rules! test_checked_next_power_of_two {
         ($test_name:ident, $T:ident) => (
-            #[cfg_attr(target_os = "emscripten", ignore)] // FIXME(#39119)
             fn $test_name() {
                 #![test]
                 assert_eq!((0 as $T).checked_next_power_of_two(), Some(1));

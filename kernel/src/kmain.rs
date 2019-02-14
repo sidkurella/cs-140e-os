@@ -4,9 +4,8 @@
 #![feature(asm)]
 #![feature(optin_builtin_traits)]
 #![feature(decl_macro)]
-#![feature(repr_align)]
-#![feature(attr_literals)]
-#![feature(exclusive_range_pattern)] #![feature(alloc, allocator_api, global_allocator)]
+#![feature(exclusive_range_pattern)]
+#![feature(alloc, allocator_api)]
 
 #[macro_use]
 #[allow(unused_imports)]

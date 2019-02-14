@@ -1,13 +1,3 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use borrow::Borrow;
 use fmt;
 use hash::{Hash, BuildHasher};
@@ -49,14 +39,14 @@ use super::map::{self, HashMap, Keys, RandomState};
 /// ```
 /// use std::collections::HashSet;
 /// // Type inference lets us omit an explicit type signature (which
-/// // would be `HashSet<&str>` in this example).
+/// // would be `HashSet<String>` in this example).
 /// let mut books = HashSet::new();
 ///
 /// // Add some books.
-/// books.insert("A Dance With Dragons");
-/// books.insert("To Kill a Mockingbird");
-/// books.insert("The Odyssey");
-/// books.insert("The Great Gatsby");
+/// books.insert("A Dance With Dragons".to_string());
+/// books.insert("To Kill a Mockingbird".to_string());
+/// books.insert("The Odyssey".to_string());
+/// books.insert("The Great Gatsby".to_string());
 ///
 /// // Check for a specific one.
 /// if !books.contains("The Winds of Winter") {
@@ -80,17 +70,17 @@ use super::map::{self, HashMap, Keys, RandomState};
 /// ```
 /// use std::collections::HashSet;
 /// #[derive(Hash, Eq, PartialEq, Debug)]
-/// struct Viking<'a> {
-///     name: &'a str,
+/// struct Viking {
+///     name: String,
 ///     power: usize,
 /// }
 ///
 /// let mut vikings = HashSet::new();
 ///
-/// vikings.insert(Viking { name: "Einar", power: 9 });
-/// vikings.insert(Viking { name: "Einar", power: 9 });
-/// vikings.insert(Viking { name: "Olaf", power: 4 });
-/// vikings.insert(Viking { name: "Harald", power: 8 });
+/// vikings.insert(Viking { name: "Einar".to_string(), power: 9 });
+/// vikings.insert(Viking { name: "Einar".to_string(), power: 9 });
+/// vikings.insert(Viking { name: "Olaf".to_string(), power: 4 });
+/// vikings.insert(Viking { name: "Harald".to_string(), power: 8 });
 ///
 /// // Use derived implementation to print the vikings.
 /// for x in &vikings {
@@ -104,7 +94,7 @@ use super::map::{self, HashMap, Keys, RandomState};
 /// use std::collections::HashSet;
 ///
 /// fn main() {
-///     let viking_names: HashSet<&str> =
+///     let viking_names: HashSet<&'static str> =
 ///         [ "Einar", "Olaf", "Harald" ].iter().cloned().collect();
 ///     // use the values stored in the set
 /// }
@@ -189,7 +179,7 @@ impl<T, S> HashSet<T, S>
         HashSet { map: HashMap::with_hasher(hasher) }
     }
 
-    /// Creates an empty `HashSet` with with the specified capacity, using
+    /// Creates an empty `HashSet` with the specified capacity, using
     /// `hasher` to hash the keys.
     ///
     /// The hash set will be able to hold at least `capacity` elements without
@@ -292,6 +282,34 @@ impl<T, S> HashSet<T, S>
         self.map.shrink_to_fit()
     }
 
+    /// Shrinks the capacity of the set with a lower limit. It will drop
+    /// down no lower than the supplied limit while maintaining the internal rules
+    /// and possibly leaving some space in accordance with the resize policy.
+    ///
+    /// Panics if the current capacity is smaller than the supplied
+    /// minimum capacity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #![feature(shrink_to)]
+    /// use std::collections::HashSet;
+    ///
+    /// let mut set = HashSet::with_capacity(100);
+    /// set.insert(1);
+    /// set.insert(2);
+    /// assert!(set.capacity() >= 100);
+    /// set.shrink_to(10);
+    /// assert!(set.capacity() >= 10);
+    /// set.shrink_to(0);
+    /// assert!(set.capacity() >= 2);
+    /// ```
+    #[inline]
+    #[unstable(feature = "shrink_to", reason = "new API", issue="56431")]
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.map.shrink_to(min_capacity)
+    }
+
     /// An iterator visiting all elements in arbitrary order.
     /// The iterator element type is `&'a T`.
     ///
@@ -314,7 +332,7 @@ impl<T, S> HashSet<T, S>
     }
 
     /// Visits the values representing the difference,
-    /// i.e. the values that are in `self` but not in `other`.
+    /// i.e., the values that are in `self` but not in `other`.
     ///
     /// # Examples
     ///
@@ -345,7 +363,7 @@ impl<T, S> HashSet<T, S>
     }
 
     /// Visits the values representing the symmetric difference,
-    /// i.e. the values that are in `self` or in `other` but not in both.
+    /// i.e., the values that are in `self` or in `other` but not in both.
     ///
     /// # Examples
     ///
@@ -373,7 +391,7 @@ impl<T, S> HashSet<T, S>
     }
 
     /// Visits the values representing the intersection,
-    /// i.e. the values that are both in `self` and `other`.
+    /// i.e., the values that are both in `self` and `other`.
     ///
     /// # Examples
     ///
@@ -392,14 +410,21 @@ impl<T, S> HashSet<T, S>
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn intersection<'a>(&'a self, other: &'a HashSet<T, S>) -> Intersection<'a, T, S> {
-        Intersection {
-            iter: self.iter(),
-            other,
+        if self.len() <= other.len() {
+            Intersection {
+                iter: self.iter(),
+                other,
+            }
+        } else {
+            Intersection {
+                iter: other.iter(),
+                other: self,
+            }
         }
     }
 
     /// Visits the values representing the union,
-    /// i.e. all the values in `self` or `other`, without duplicates.
+    /// i.e., all the values in `self` or `other`, without duplicates.
     ///
     /// # Examples
     ///
@@ -418,7 +443,15 @@ impl<T, S> HashSet<T, S>
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn union<'a>(&'a self, other: &'a HashSet<T, S>) -> Union<'a, T, S> {
-        Union { iter: self.iter().chain(other.difference(self)) }
+        if self.len() <= other.len() {
+            Union {
+                iter: self.iter().chain(other.difference(self)),
+            }
+        } else {
+            Union {
+                iter: other.iter().chain(self.difference(other)),
+            }
+        }
     }
 
     /// Returns the number of elements in the set.
@@ -566,11 +599,15 @@ impl<T, S> HashSet<T, S>
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn is_disjoint(&self, other: &HashSet<T, S>) -> bool {
-        self.iter().all(|v| !other.contains(v))
+        if self.len() <= other.len() {
+            self.iter().all(|v| !other.contains(v))
+        } else {
+            other.iter().all(|v| !self.contains(v))
+        }
     }
 
     /// Returns `true` if the set is a subset of another,
-    /// i.e. `other` contains at least all the values in `self`.
+    /// i.e., `other` contains at least all the values in `self`.
     ///
     /// # Examples
     ///
@@ -592,7 +629,7 @@ impl<T, S> HashSet<T, S>
     }
 
     /// Returns `true` if the set is a superset of another,
-    /// i.e. `self` contains at least all the values in `other`.
+    /// i.e., `self` contains at least all the values in `other`.
     ///
     /// # Examples
     ///
@@ -724,7 +761,7 @@ impl<T, S> HashSet<T, S>
     /// use std::collections::HashSet;
     ///
     /// let xs = [1,2,3,4,5,6];
-    /// let mut set: HashSet<isize> = xs.iter().cloned().collect();
+    /// let mut set: HashSet<i32> = xs.iter().cloned().collect();
     /// set.retain(|&k| k % 2 == 0);
     /// assert_eq!(set.len(), 3);
     /// ```
@@ -1097,7 +1134,7 @@ impl<'a, K> ExactSizeIterator for Iter<'a, K> {
         self.iter.len()
     }
 }
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a, K> FusedIterator for Iter<'a, K> {}
 
 #[stable(feature = "std_debug", since = "1.16.0")]
@@ -1124,7 +1161,7 @@ impl<K> ExactSizeIterator for IntoIter<K> {
         self.iter.len()
     }
 }
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<K> FusedIterator for IntoIter<K> {}
 
 #[stable(feature = "std_debug", since = "1.16.0")]
@@ -1155,7 +1192,7 @@ impl<'a, K> ExactSizeIterator for Drain<'a, K> {
         self.iter.len()
     }
 }
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a, K> FusedIterator for Drain<'a, K> {}
 
 #[stable(feature = "std_debug", since = "1.16.0")]
@@ -1208,7 +1245,7 @@ impl<'a, T, S> fmt::Debug for Intersection<'a, T, S>
     }
 }
 
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a, T, S> FusedIterator for Intersection<'a, T, S>
     where T: Eq + Hash,
           S: BuildHasher
@@ -1244,7 +1281,7 @@ impl<'a, T, S> Iterator for Difference<'a, T, S>
     }
 }
 
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a, T, S> FusedIterator for Difference<'a, T, S>
     where T: Eq + Hash,
           S: BuildHasher
@@ -1283,7 +1320,7 @@ impl<'a, T, S> Iterator for SymmetricDifference<'a, T, S>
     }
 }
 
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a, T, S> FusedIterator for SymmetricDifference<'a, T, S>
     where T: Eq + Hash,
           S: BuildHasher
@@ -1307,7 +1344,7 @@ impl<'a, T, S> Clone for Union<'a, T, S> {
     }
 }
 
-#[unstable(feature = "fused", issue = "35602")]
+#[stable(feature = "fused", since = "1.26.0")]
 impl<'a, T, S> FusedIterator for Union<'a, T, S>
     where T: Eq + Hash,
           S: BuildHasher
@@ -1476,6 +1513,7 @@ mod test_set {
     fn test_intersection() {
         let mut a = HashSet::new();
         let mut b = HashSet::new();
+        assert!(a.intersection(&b).next().is_none());
 
         assert!(a.insert(11));
         assert!(a.insert(1));
@@ -1496,6 +1534,22 @@ mod test_set {
         let mut i = 0;
         let expected = [3, 5, 11, 77];
         for x in a.intersection(&b) {
+            assert!(expected.contains(x));
+            i += 1
+        }
+        assert_eq!(i, expected.len());
+
+        assert!(a.insert(9)); // make a bigger than b
+
+        i = 0;
+        for x in a.intersection(&b) {
+            assert!(expected.contains(x));
+            i += 1
+        }
+        assert_eq!(i, expected.len());
+
+        i = 0;
+        for x in b.intersection(&a) {
             assert!(expected.contains(x));
             i += 1
         }
@@ -1555,11 +1609,11 @@ mod test_set {
     fn test_union() {
         let mut a = HashSet::new();
         let mut b = HashSet::new();
+        assert!(a.union(&b).next().is_none());
+        assert!(b.union(&a).next().is_none());
 
         assert!(a.insert(1));
         assert!(a.insert(3));
-        assert!(a.insert(5));
-        assert!(a.insert(9));
         assert!(a.insert(11));
         assert!(a.insert(16));
         assert!(a.insert(19));
@@ -1575,6 +1629,23 @@ mod test_set {
         let mut i = 0;
         let expected = [-2, 1, 3, 5, 9, 11, 13, 16, 19, 24];
         for x in a.union(&b) {
+            assert!(expected.contains(x));
+            i += 1
+        }
+        assert_eq!(i, expected.len());
+
+        assert!(a.insert(9)); // make a bigger than b
+        assert!(a.insert(5));
+
+        i = 0;
+        for x in a.union(&b) {
+            assert!(expected.contains(x));
+            i += 1
+        }
+        assert_eq!(i, expected.len());
+
+        i = 0;
+        for x in b.union(&a) {
             assert!(expected.contains(x));
             i += 1
         }
@@ -1745,7 +1816,7 @@ mod test_set {
     #[test]
     fn test_retain() {
         let xs = [1, 2, 3, 4, 5, 6];
-        let mut set: HashSet<isize> = xs.iter().cloned().collect();
+        let mut set: HashSet<i32> = xs.iter().cloned().collect();
         set.retain(|&k| k % 2 == 0);
         assert_eq!(set.len(), 3);
         assert!(set.contains(&2));

@@ -1,13 +1,3 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 #![allow(missing_copy_implementations)]
 
 use fmt;
@@ -23,6 +13,11 @@ use mem;
 /// On success, the total number of bytes that were copied from
 /// `reader` to `writer` is returned.
 ///
+/// If you’re wanting to copy the contents of one file to another and you’re
+/// working with filesystem paths, see the [`fs::copy`] function.
+///
+/// [`fs::copy`]: ../fs/fn.copy.html
+///
 /// # Errors
 ///
 /// This function will return an error immediately if any call to `read` or
@@ -34,16 +29,15 @@ use mem;
 /// ```
 /// use std::io;
 ///
-/// # fn foo() -> io::Result<()> {
-/// let mut reader: &[u8] = b"hello";
-/// let mut writer: Vec<u8> = vec![];
+/// fn main() -> io::Result<()> {
+///     let mut reader: &[u8] = b"hello";
+///     let mut writer: Vec<u8> = vec![];
 ///
-/// io::copy(&mut reader, &mut writer)?;
+///     io::copy(&mut reader, &mut writer)?;
 ///
-/// assert_eq!(&b"hello"[..], &writer[..]);
-/// # Ok(())
-/// # }
-/// # foo().unwrap();
+///     assert_eq!(&b"hello"[..], &writer[..]);
+///     Ok(())
+/// }
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> io::Result<u64>
@@ -146,7 +140,7 @@ pub struct Repeat { byte: u8 }
 /// assert_eq!(buffer, [0b101, 0b101, 0b101]);
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
-pub fn repeat(byte: u8) -> Repeat { Repeat { byte: byte } }
+pub fn repeat(byte: u8) -> Repeat { Repeat { byte } }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl Read for Repeat {
@@ -224,7 +218,7 @@ mod tests {
         assert_eq!(copy(&mut r, &mut w).unwrap(), 4);
 
         let mut r = repeat(0).take(1 << 17);
-        assert_eq!(copy(&mut r as &mut Read, &mut w as &mut Write).unwrap(), 1 << 17);
+        assert_eq!(copy(&mut r as &mut dyn Read, &mut w as &mut dyn Write).unwrap(), 1 << 17);
     }
 
     #[test]

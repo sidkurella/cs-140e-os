@@ -1,20 +1,10 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 #![allow(dead_code)]
 #![unstable(feature = "process_internals", issue = "0")]
 
 use ffi::{OsStr, OsString};
 use env;
 use collections::BTreeMap;
-use alloc::borrow::Borrow;
+use borrow::Borrow;
 
 pub trait EnvKey:
     From<OsString> + Into<OsString> +
@@ -47,6 +37,7 @@ impl EnvKey for DefaultEnvKey {}
 #[derive(Clone, Debug)]
 pub struct CommandEnv<K> {
     clear: bool,
+    saw_path: bool,
     vars: BTreeMap<K, Option<OsString>>
 }
 
@@ -54,6 +45,7 @@ impl<K: EnvKey> Default for CommandEnv<K> {
     fn default() -> Self {
         CommandEnv {
             clear: false,
+            saw_path: false,
             vars: Default::default()
         }
     }
@@ -108,9 +100,11 @@ impl<K: EnvKey> CommandEnv<K> {
 
     // The following functions build up changes
     pub fn set(&mut self, key: &OsStr, value: &OsStr) {
+        self.maybe_saw_path(&key);
         self.vars.insert(key.to_owned().into(), Some(value.to_owned()));
     }
     pub fn remove(&mut self, key: &OsStr) {
+        self.maybe_saw_path(&key);
         if self.clear {
             self.vars.remove(key);
         } else {
@@ -120,5 +114,13 @@ impl<K: EnvKey> CommandEnv<K> {
     pub fn clear(&mut self) {
         self.clear = true;
         self.vars.clear();
+    }
+    pub fn have_changed_path(&self) -> bool {
+        self.saw_path || self.clear
+    }
+    fn maybe_saw_path(&mut self, key: &OsStr) {
+        if !self.saw_path && key == "PATH" {
+            self.saw_path = true;
+        }
     }
 }

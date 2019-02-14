@@ -1,13 +1,3 @@
-// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Collection types.
 //!
 //! Rust's standard collection library provides efficient implementations of the
@@ -64,11 +54,11 @@
 //! * You want a map, with no extra functionality.
 //!
 //! ### Use a `BTreeMap` when:
+//! * You want a map sorted by its keys.
+//! * You want to be able to get a range of entries on-demand.
 //! * You're interested in what the smallest or largest key-value pair is.
 //! * You want to find the largest or smallest key that is smaller or larger
 //!   than something.
-//! * You want to be able to get all of the entries in order on-demand.
-//! * You want a map sorted by its keys.
 //!
 //! ### Use the `Set` variant of any of these `Map`s when:
 //! * You just want to remember which keys you've seen.
@@ -420,23 +410,25 @@
 #![stable(feature = "rust1", since = "1.0.0")]
 
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use alloc::Bound;
+#[rustc_deprecated(reason = "moved to `std::ops::Bound`", since = "1.26.0")]
+#[doc(hidden)]
+pub use ops::Bound;
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use alloc::{BinaryHeap, BTreeMap, BTreeSet};
+pub use alloc_crate::collections::{BinaryHeap, BTreeMap, BTreeSet};
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use alloc::{LinkedList, VecDeque};
+pub use alloc_crate::collections::{LinkedList, VecDeque};
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use alloc::{binary_heap, btree_map, btree_set};
+pub use alloc_crate::collections::{binary_heap, btree_map, btree_set};
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use alloc::{linked_list, vec_deque};
+pub use alloc_crate::collections::{linked_list, vec_deque};
 
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use self::hash_map::HashMap;
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use self::hash_set::HashSet;
 
-#[stable(feature = "rust1", since = "1.0.0")]
-pub use alloc::range;
+#[unstable(feature = "try_reserve", reason = "new API", issue="48043")]
+pub use alloc_crate::collections::CollectionAllocErr;
 
 mod hash;
 

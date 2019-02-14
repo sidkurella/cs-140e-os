@@ -1,13 +1,3 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use error;
 use fmt;
 use result;
@@ -83,7 +73,7 @@ enum Repr {
 #[derive(Debug)]
 struct Custom {
     kind: ErrorKind,
-    error: Box<error::Error+Send+Sync>,
+    error: Box<dyn error::Error+Send+Sync>,
 }
 
 /// A list specifying general categories of I/O error.
@@ -97,6 +87,7 @@ struct Custom {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[allow(deprecated)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// An entity was not found, often a file.
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -180,19 +171,10 @@ pub enum ErrorKind {
     /// read.
     #[stable(feature = "read_exact", since = "1.6.0")]
     UnexpectedEof,
-
-    /// A marker variant that tells the compiler that users of this enum cannot
-    /// match it exhaustively.
-    #[unstable(feature = "io_error_internals",
-               reason = "better expressed through extensible enums that this \
-                         enum cannot be exhaustively matched against",
-               issue = "0")]
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl ErrorKind {
-    fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match *self {
             ErrorKind::NotFound => "entity not found",
             ErrorKind::PermissionDenied => "permission denied",
@@ -212,7 +194,6 @@ impl ErrorKind {
             ErrorKind::Interrupted => "operation interrupted",
             ErrorKind::Other => "other os error",
             ErrorKind::UnexpectedEof => "unexpected end of file",
-            ErrorKind::__Nonexhaustive => unreachable!()
         }
     }
 }
@@ -221,6 +202,22 @@ impl ErrorKind {
 /// the heap (for normal construction via Error::new) is too costly.
 #[stable(feature = "io_error_from_errorkind", since = "1.14.0")]
 impl From<ErrorKind> for Error {
+    /// Converts an [`ErrorKind`] into an [`Error`].
+    ///
+    /// This conversion allocates a new error with a simple representation of error kind.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::io::{Error, ErrorKind};
+    ///
+    /// let not_found = ErrorKind::NotFound;
+    /// let error = Error::from(not_found);
+    /// assert_eq!("entity not found", format!("{}", error));
+    /// ```
+    ///
+    /// [`ErrorKind`]: ../../std/io/enum.ErrorKind.html
+    /// [`Error`]: ../../std/io/struct.Error.html
     #[inline]
     fn from(kind: ErrorKind) -> Error {
         Error {
@@ -250,12 +247,12 @@ impl Error {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn new<E>(kind: ErrorKind, error: E) -> Error
-        where E: Into<Box<error::Error+Send+Sync>>
+        where E: Into<Box<dyn error::Error+Send+Sync>>
     {
         Self::_new(kind, error.into())
     }
 
-    fn _new(kind: ErrorKind, error: Box<error::Error+Send+Sync>) -> Error {
+    fn _new(kind: ErrorKind, error: Box<dyn error::Error+Send+Sync>) -> Error {
         Error {
             repr: Repr::Custom(Box::new(Custom {
                 kind,
@@ -292,8 +289,8 @@ impl Error {
     /// # if cfg!(target_os = "linux") {
     /// use std::io;
     ///
-    /// let error = io::Error::from_raw_os_error(98);
-    /// assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+    /// let error = io::Error::from_raw_os_error(22);
+    /// assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     /// # }
     /// ```
     ///
@@ -303,8 +300,8 @@ impl Error {
     /// # if cfg!(windows) {
     /// use std::io;
     ///
-    /// let error = io::Error::from_raw_os_error(10048);
-    /// assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+    /// let error = io::Error::from_raw_os_error(10022);
+    /// assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     /// # }
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -373,7 +370,7 @@ impl Error {
     /// }
     /// ```
     #[stable(feature = "io_error_inner", since = "1.3.0")]
-    pub fn get_ref(&self) -> Option<&(error::Error+Send+Sync+'static)> {
+    pub fn get_ref(&self) -> Option<&(dyn error::Error+Send+Sync+'static)> {
         match self.repr {
             Repr::Os(..) => None,
             Repr::Simple(..) => None,
@@ -444,7 +441,7 @@ impl Error {
     /// }
     /// ```
     #[stable(feature = "io_error_inner", since = "1.3.0")]
-    pub fn get_mut(&mut self) -> Option<&mut (error::Error+Send+Sync+'static)> {
+    pub fn get_mut(&mut self) -> Option<&mut (dyn error::Error+Send+Sync+'static)> {
         match self.repr {
             Repr::Os(..) => None,
             Repr::Simple(..) => None,
@@ -478,7 +475,7 @@ impl Error {
     /// }
     /// ```
     #[stable(feature = "io_error_inner", since = "1.3.0")]
-    pub fn into_inner(self) -> Option<Box<error::Error+Send+Sync>> {
+    pub fn into_inner(self) -> Option<Box<dyn error::Error+Send+Sync>> {
         match self.repr {
             Repr::Os(..) => None,
             Repr::Simple(..) => None,
@@ -551,7 +548,8 @@ impl error::Error for Error {
         }
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    #[allow(deprecated)]
+    fn cause(&self) -> Option<&dyn error::Error> {
         match self.repr {
             Repr::Os(..) => None,
             Repr::Simple(..) => None,

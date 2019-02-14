@@ -1,13 +1,3 @@
-// Copyright 2016 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 #![unstable(reason = "not public", issue = "0", feature = "fd")]
 
 use io::{self, Read};
@@ -21,12 +11,12 @@ pub struct FileDesc {
 
 impl FileDesc {
     pub fn new(fd: usize) -> FileDesc {
-        FileDesc { fd: fd }
+        FileDesc { fd }
     }
 
     pub fn raw(&self) -> usize { self.fd }
 
-    /// Extracts the actual filedescriptor without closing it.
+    /// Extracts the actual file descriptor without closing it.
     pub fn into_raw(self) -> usize {
         let fd = self.fd;
         mem::forget(self);
@@ -47,7 +37,10 @@ impl FileDesc {
     }
 
     pub fn duplicate(&self) -> io::Result<FileDesc> {
-        let new_fd = cvt(syscall::dup(self.fd, &[]))?;
+        self.duplicate_path(&[])
+    }
+    pub fn duplicate_path(&self, path: &[u8]) -> io::Result<FileDesc> {
+        let new_fd = cvt(syscall::dup(self.fd, path))?;
         Ok(FileDesc::new(new_fd))
     }
 

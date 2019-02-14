@@ -1,13 +1,3 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use cell::UnsafeCell;
 use fmt;
 use mem;
@@ -24,8 +14,8 @@ use sys_common::rwlock as sys;
 /// typically allows for read-only access (shared access).
 ///
 /// In comparison, a [`Mutex`] does not distinguish between readers or writers
-/// that aquire the lock, therefore blocking any threads waiting for the lock to
-/// become available. An `RwLock` will allow any number of readers to aquire the
+/// that acquire the lock, therefore blocking any threads waiting for the lock to
+/// become available. An `RwLock` will allow any number of readers to acquire the
 /// lock as long as a writer is not holding the lock.
 ///
 /// The priority policy of the lock is dependent on the underlying operating
@@ -94,7 +84,7 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 /// [`read`]: struct.RwLock.html#method.read
 /// [`try_read`]: struct.RwLock.html#method.try_read
 /// [`RwLock`]: struct.RwLock.html
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
     __lock: &'a RwLock<T>,
@@ -115,7 +105,7 @@ unsafe impl<'a, T: ?Sized + Sync> Sync for RwLockReadGuard<'a, T> {}
 /// [`write`]: struct.RwLock.html#method.write
 /// [`try_write`]: struct.RwLock.html#method.try_write
 /// [`RwLock`]: struct.RwLock.html
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
     __lock: &'a RwLock<T>,
@@ -461,8 +451,6 @@ impl<T: Default> Default for RwLock<T> {
 impl<T> From<T> for RwLock<T> {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
     /// This is equivalent to [`RwLock::new`].
-    ///
-    /// [`RwLock::new`]: #method.new
     fn from(t: T) -> Self {
         RwLock::new(t)
     }
@@ -597,7 +585,7 @@ mod tests {
             thread::spawn(move || {
                 let mut rng = rand::thread_rng();
                 for _ in 0..M {
-                    if rng.gen_weighted_bool(N) {
+                    if rng.gen_bool(1.0 / (N as f64)) {
                         drop(r.write().unwrap());
                     } else {
                         drop(r.read().unwrap());

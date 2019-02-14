@@ -1,13 +1,3 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use io::prelude::*;
 
 use fmt;
@@ -43,12 +33,12 @@ use time::Duration;
 /// use std::io::prelude::*;
 /// use std::net::TcpStream;
 ///
-/// {
-///     let mut stream = TcpStream::connect("127.0.0.1:34254").unwrap();
+/// fn main() -> std::io::Result<()> {
+///     let mut stream = TcpStream::connect("127.0.0.1:34254")?;
 ///
-///     // ignore the Result
-///     let _ = stream.write(&[1]);
-///     let _ = stream.read(&mut [0; 128]); // ignore here too
+///     stream.write(&[1])?;
+///     stream.read(&mut [0; 128])?;
+///     Ok(())
 /// } // the stream is closed here
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -72,7 +62,7 @@ pub struct TcpStream(net_imp::TcpStream);
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # use std::io;
 /// use std::net::{TcpListener, TcpStream};
 ///
@@ -80,15 +70,15 @@ pub struct TcpStream(net_imp::TcpStream);
 ///     // ...
 /// }
 ///
-/// # fn process() -> io::Result<()> {
-/// let listener = TcpListener::bind("127.0.0.1:80").unwrap();
+/// fn main() -> io::Result<()> {
+///     let listener = TcpListener::bind("127.0.0.1:80")?;
 ///
-/// // accept connections and process them serially
-/// for stream in listener.incoming() {
-///     handle_client(stream?);
+///     // accept connections and process them serially
+///     for stream in listener.incoming() {
+///         handle_client(stream?);
+///     }
+///     Ok(())
 /// }
-/// # Ok(())
-/// # }
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct TcpListener(net_imp::TcpListener);
@@ -259,19 +249,21 @@ impl TcpStream {
     /// Sets the read timeout to the timeout specified.
     ///
     /// If the value specified is [`None`], then [`read`] calls will block
-    /// indefinitely. It is an error to pass the zero `Duration` to this
-    /// method.
+    /// indefinitely. An [`Err`] is returned if the zero [`Duration`] is
+    /// passed to this method.
     ///
-    /// # Note
+    /// # Platform-specific behavior
     ///
     /// Platforms may return a different error code whenever a read times out as
     /// a result of setting this option. For example Unix typically returns an
     /// error of the kind [`WouldBlock`], but Windows may return [`TimedOut`].
     ///
     /// [`None`]: ../../std/option/enum.Option.html#variant.None
+    /// [`Err`]: ../../std/result/enum.Result.html#variant.Err
     /// [`read`]: ../../std/io/trait.Read.html#tymethod.read
     /// [`WouldBlock`]: ../../std/io/enum.ErrorKind.html#variant.WouldBlock
     /// [`TimedOut`]: ../../std/io/enum.ErrorKind.html#variant.TimedOut
+    /// [`Duration`]: ../../std/time/struct.Duration.html
     ///
     /// # Examples
     ///
@@ -282,6 +274,20 @@ impl TcpStream {
     ///                        .expect("Couldn't connect to the server...");
     /// stream.set_read_timeout(None).expect("set_read_timeout call failed");
     /// ```
+    ///
+    /// An [`Err`] is returned if the zero [`Duration`] is passed to this
+    /// method:
+    ///
+    /// ```no_run
+    /// use std::io;
+    /// use std::net::TcpStream;
+    /// use std::time::Duration;
+    ///
+    /// let stream = TcpStream::connect("127.0.0.1:8080").unwrap();
+    /// let result = stream.set_read_timeout(Some(Duration::new(0, 0)));
+    /// let err = result.unwrap_err();
+    /// assert_eq!(err.kind(), io::ErrorKind::InvalidInput)
+    /// ```
     #[stable(feature = "socket_timeout", since = "1.4.0")]
     pub fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
         self.0.set_read_timeout(dur)
@@ -290,16 +296,17 @@ impl TcpStream {
     /// Sets the write timeout to the timeout specified.
     ///
     /// If the value specified is [`None`], then [`write`] calls will block
-    /// indefinitely. It is an error to pass the zero [`Duration`] to this
-    /// method.
+    /// indefinitely. An [`Err`] is returned if the zero [`Duration`] is
+    /// passed to this method.
     ///
-    /// # Note
+    /// # Platform-specific behavior
     ///
     /// Platforms may return a different error code whenever a write times out
     /// as a result of setting this option. For example Unix typically returns
     /// an error of the kind [`WouldBlock`], but Windows may return [`TimedOut`].
     ///
     /// [`None`]: ../../std/option/enum.Option.html#variant.None
+    /// [`Err`]: ../../std/result/enum.Result.html#variant.Err
     /// [`write`]: ../../std/io/trait.Write.html#tymethod.write
     /// [`Duration`]: ../../std/time/struct.Duration.html
     /// [`WouldBlock`]: ../../std/io/enum.ErrorKind.html#variant.WouldBlock
@@ -314,6 +321,20 @@ impl TcpStream {
     ///                        .expect("Couldn't connect to the server...");
     /// stream.set_write_timeout(None).expect("set_write_timeout call failed");
     /// ```
+    ///
+    /// An [`Err`] is returned if the zero [`Duration`] is passed to this
+    /// method:
+    ///
+    /// ```no_run
+    /// use std::io;
+    /// use std::net::TcpStream;
+    /// use std::time::Duration;
+    ///
+    /// let stream = TcpStream::connect("127.0.0.1:8080").unwrap();
+    /// let result = stream.set_write_timeout(Some(Duration::new(0, 0)));
+    /// let err = result.unwrap_err();
+    /// assert_eq!(err.kind(), io::ErrorKind::InvalidInput)
+    /// ```
     #[stable(feature = "socket_timeout", since = "1.4.0")]
     pub fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
         self.0.set_write_timeout(dur)
@@ -323,7 +344,7 @@ impl TcpStream {
     ///
     /// If the timeout is [`None`], then [`read`] calls will block indefinitely.
     ///
-    /// # Note
+    /// # Platform-specific behavior
     ///
     /// Some platforms do not provide access to the current timeout.
     ///
@@ -349,7 +370,7 @@ impl TcpStream {
     ///
     /// If the timeout is [`None`], then [`write`] calls will block indefinitely.
     ///
-    /// # Note
+    /// # Platform-specific behavior
     ///
     /// Some platforms do not provide access to the current timeout.
     ///
@@ -499,7 +520,7 @@ impl TcpStream {
     /// Moves this TCP stream into or out of nonblocking mode.
     ///
     /// This will result in `read`, `write`, `recv` and `send` operations
-    /// becoming nonblocking, i.e. immediately returning from their calls.
+    /// becoming nonblocking, i.e., immediately returning from their calls.
     /// If the IO operation is successful, `Ok` is returned and no further
     /// action is required. If the IO operation could not be completed and needs
     /// to be retried, an error with kind [`io::ErrorKind::WouldBlock`] is
@@ -698,6 +719,9 @@ impl TcpListener {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
+        // On WASM, `TcpStream` is uninhabited (as it's unsupported) and so
+        // the `a` variable here is technically unused.
+        #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
         self.0.accept().map(|(a, b)| (TcpStream(a), b))
     }
 
@@ -809,7 +833,7 @@ impl TcpListener {
     /// Moves this TCP stream into or out of nonblocking mode.
     ///
     /// This will result in the `accept` operation becoming nonblocking,
-    /// i.e. immediately returning from their calls. If the IO operation is
+    /// i.e., immediately returning from their calls. If the IO operation is
     /// successful, `Ok` is returned and no further action is required. If the
     /// IO operation could not be completed and needs to be retried, an error
     /// with kind [`io::ErrorKind::WouldBlock`] is returned.
@@ -896,7 +920,7 @@ mod tests {
     use time::{Instant, Duration};
     use thread;
 
-    fn each_ip(f: &mut FnMut(SocketAddr)) {
+    fn each_ip(f: &mut dyn FnMut(SocketAddr)) {
         f(next_test_ip4());
         f(next_test_ip6());
     }
@@ -1517,8 +1541,9 @@ mod tests {
 
         let mut buf = [0; 10];
         let start = Instant::now();
-        let kind = stream.read(&mut buf).err().expect("expected error").kind();
-        assert!(kind == ErrorKind::WouldBlock || kind == ErrorKind::TimedOut);
+        let kind = stream.read_exact(&mut buf).err().expect("expected error").kind();
+        assert!(kind == ErrorKind::WouldBlock || kind == ErrorKind::TimedOut,
+                "unexpected_error: {:?}", kind);
         assert!(start.elapsed() > Duration::from_millis(400));
         drop(listener);
     }
@@ -1539,9 +1564,30 @@ mod tests {
         assert_eq!(b"hello world", &buf[..]);
 
         let start = Instant::now();
-        let kind = stream.read(&mut buf).err().expect("expected error").kind();
-        assert!(kind == ErrorKind::WouldBlock || kind == ErrorKind::TimedOut);
+        let kind = stream.read_exact(&mut buf).err().expect("expected error").kind();
+        assert!(kind == ErrorKind::WouldBlock || kind == ErrorKind::TimedOut,
+                "unexpected_error: {:?}", kind);
         assert!(start.elapsed() > Duration::from_millis(400));
+        drop(listener);
+    }
+
+    // Ensure the `set_read_timeout` and `set_write_timeout` calls return errors
+    // when passed zero Durations
+    #[test]
+    fn test_timeout_zero_duration() {
+        let addr = next_test_ip4();
+
+        let listener = t!(TcpListener::bind(&addr));
+        let stream = t!(TcpStream::connect(&addr));
+
+        let result = stream.set_write_timeout(Some(Duration::new(0, 0)));
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+
+        let result = stream.set_read_timeout(Some(Duration::new(0, 0)));
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+
         drop(listener);
     }
 
@@ -1625,17 +1671,6 @@ mod tests {
             }
             t!(txdone.send(()));
         })
-    }
-
-    #[test]
-    fn connect_timeout_unroutable() {
-        // this IP is unroutable, so connections should always time out,
-        // provided the network is reachable to begin with.
-        let addr = "10.255.255.1:80".parse().unwrap();
-        let e = TcpStream::connect_timeout(&addr, Duration::from_millis(250)).unwrap_err();
-        assert!(e.kind() == io::ErrorKind::TimedOut ||
-                e.kind() == io::ErrorKind::Other,
-                "bad error: {} {:?}", e, e.kind());
     }
 
     #[test]
