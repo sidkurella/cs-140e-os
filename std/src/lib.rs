@@ -3,105 +3,86 @@
 // Don't link to std. We are std.
 #![no_std]
 
-// std may use features in a platform-specific way
-#![allow(unused_features)]
-
 // std is implemented with unstable features, many of which are internal
 // compiler details that will never be stable
-#![feature(alloc)]
+// #![feature(alloc)]
+#![feature(alloc_error_handler)]
 #![feature(allocator_api)]
-#![feature(alloc_system)]
 #![feature(allocator_internals)]
 #![feature(allow_internal_unsafe)]
 #![feature(allow_internal_unstable)]
 #![feature(align_offset)]
+#![feature(arbitrary_self_types)]
 #![feature(array_error_internals)]
-#![feature(ascii_ctype)]
 #![feature(asm)]
-#![feature(attr_literals)]
 #![feature(box_syntax)]
+#![feature(c_variadic)]
 #![feature(cfg_target_has_atomic)]
 #![feature(cfg_target_thread_local)]
-#![feature(cfg_target_vendor)]
 #![feature(char_error_internals)]
-#![feature(char_internals)]
-#![feature(collections_range)]
 #![feature(compiler_builtins_lib)]
-#![feature(const_fn)]
-#![feature(core_float)]
+#![feature(concat_idents)]
+#![feature(const_raw_ptr_deref)]
+// #![feature(const_cstr_unchecked)]
 #![feature(core_intrinsics)]
+#![feature(core_panic_info)]
 #![feature(dropck_eyepatch)]
+#![feature(duration_constants)]
 #![feature(exact_size_is_empty)]
-#![feature(fs_read_write)]
+#![feature(external_doc)]
 #![feature(fixed_size_array)]
-#![feature(float_from_str_radix)]
 #![feature(fn_traits)]
-#![feature(fnbox)]
-#![feature(fused)]
-#![feature(generic_param_attrs)]
-#![feature(hashmap_hasher)]
-#![feature(heap_api)]
-#![feature(i128)]
-#![feature(i128_type)]
-#![feature(inclusive_range)]
+// #![feature(fnbox)]
+#![feature(futures_api)]
+#![feature(generator_trait)]
+#![feature(hashmap_internals)]
 #![feature(int_error_internals)]
-#![feature(integer_atomics)]
-#![feature(into_cow)]
+// #![feature(integer_atomics)]
 #![feature(lang_items)]
 #![feature(libc)]
 #![feature(link_args)]
 #![feature(linkage)]
-#![feature(macro_reexport)]
-#![feature(macro_vis_matcher)]
 #![feature(needs_panic_runtime)]
 #![feature(never_type)]
-#![feature(num_bits_bytes)]
-#![feature(old_wrapping)]
+#![feature(nll)]
+#![feature(exhaustive_patterns)]
 #![feature(on_unimplemented)]
-#![feature(oom)]
 #![feature(optin_builtin_traits)]
-#![feature(panic_unwind)]
-#![feature(peek)]
-#![feature(placement_in_syntax)]
-#![feature(placement_new_protocol)]
+#![feature(panic_internals)]
+// #![feature(panic_unwind)]
 #![feature(prelude_import)]
 #![feature(ptr_internals)]
-#![feature(rand)]
 #![feature(raw)]
-#![feature(repr_align)]
+// #![feature(hash_raw_entry)]
 #![feature(rustc_attrs)]
-#![feature(sip_hash_13)]
-#![feature(slice_bytes)]
-#![feature(slice_concat_ext)]
+#![feature(rustc_const_unstable)]
+#![feature(std_internals)]
+#![feature(stdsimd)]
+// #![feature(shrink_to)]
+// #![feature(slice_concat_ext)]
 #![feature(slice_internals)]
 #![feature(slice_patterns)]
 #![feature(staged_api)]
 #![feature(stmt_expr_attributes)]
-#![feature(str_char)]
 #![feature(str_internals)]
-#![feature(str_utf16)]
-#![feature(termination_trait)]
-#![feature(test, rustc_private)]
+#![feature(renamed_spin_loop)]
+#![feature(rustc_private)]
 #![feature(thread_local)]
-#![feature(toowned_clone_into)]
+// #![feature(toowned_clone_into)]
 #![feature(try_from)]
+// #![feature(try_reserve)]
 #![feature(unboxed_closures)]
-#![feature(unicode)]
 #![feature(untagged_unions)]
 #![feature(unwind_attributes)]
-#![feature(vec_push_all)]
 #![feature(doc_cfg)]
 #![feature(doc_masked)]
 #![feature(doc_spotlight)]
-
-// TODO: These are additions.
-#![feature(core_slice_ext)]
-#![feature(core_str_ext)]
-#![feature(pattern)]
-#![feature(slice_get_slice)]
-#![feature(slice_rsplit)]
-#![feature(from_ref)]
-#![feature(swap_with_slice)]
+#![feature(doc_alias)]
+#![feature(doc_keyword)]
+#![feature(panic_info_message)]
+#![feature(non_exhaustive)]
+#![feature(alloc_layout_extra)]
+#![feature(maybe_uninit)]
 
 // Explicitly import the prelude. The compiler uses this same unstable attribute
 // to import the prelude implicitly when building crates that depend on std.
@@ -113,18 +94,17 @@ use prelude::v1::*;
 // #[cfg(test)] extern crate test;
 // #[cfg(test)] extern crate rand;
 
-// We want to re-export a few macros from core but libcore has already been
-// imported by the compiler (via our #[no_std] attribute) In this case we just
-// add a new crate name so we can attach the re-exports to it.
-#[macro_reexport(panic, assert, assert_eq, assert_ne, debug_assert, debug_assert_eq,
-                 debug_assert_ne, unreachable, unimplemented, write, writeln, try)]
-extern crate core as __core;
+// Re-export a few macros from core
+#[stable(feature = "rust1", since = "1.0.0")]
+pub use core::{assert_eq, assert_ne, debug_assert, debug_assert_eq, debug_assert_ne};
+#[stable(feature = "rust1", since = "1.0.0")]
+pub use core::{unreachable, unimplemented, panic, write, writeln, try};
 
 // #[macro_use]
 // #[macro_reexport(vec, format)]
 // extern crate alloc;
 // extern crate alloc_system;
-extern crate std_unicode;
+// extern crate std_unicode;
 // #[doc(masked)]
 // extern crate libc;
 
@@ -134,8 +114,8 @@ extern crate std_unicode;
 // extern crate unwind;
 
 // compiler-rt intrinsics
-#[doc(masked)]
-extern crate compiler_builtins;
+// #[doc(masked)]
+// extern crate compiler_builtins;
 
 // // During testing, this crate is not actually the "real" std library, but rather
 // // it links to the real std library, which was compiled from this same source
@@ -217,22 +197,24 @@ pub use core::u64;
 // pub use alloc::fmt;
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use core::fmt;
-// #[stable(feature = "rust1", since = "1.0.0")]
-// pub use alloc::slice;
-// #[stable(feature = "rust1", since = "1.0.0")]
-// pub use alloc::str;
+#[stable(feature = "pin", since = "1.33.0")]
+pub use core::pin;
+#[stable(feature = "rust1", since = "1.0.0")]
+pub use core::slice;
+#[stable(feature = "rust1", since = "1.0.0")]
+pub use core::str;
 // #[stable(feature = "rust1", since = "1.0.0")]
 // pub use alloc::string;
 // #[stable(feature = "rust1", since = "1.0.0")]
 // pub use alloc::vec;
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use std_unicode::char;
+pub use core::char;
 #[unstable(feature = "i128", issue = "35118")]
 pub use core::u128;
 
 // TODO: This is an addition. This should should actually come from `alloc`.
-pub mod str;
-pub mod slice;
+// pub mod str;
+// pub mod slice;
 
 // pub mod f32;
 // pub mod f64;
