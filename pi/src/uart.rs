@@ -92,40 +92,19 @@ impl MiniUart {
     /// Write the byte `byte`. This method blocks until there is space available
     /// in the output FIFO.
     pub fn write_byte(&mut self, byte: u8) {
-        // Would it be better to just wait for the whole FIFO to be empty?
-
-        // How many bits are left to write out.
-        let mut bit_ct = 8;
-        // Bits to write, shifting off written bits.
-        let mut bits = byte;
-
-        while bit_ct > 0 {
-            while self.registers.LSR.read() & LsrStatus::TxAvailable as u8 == 0 {
-                // Spin while TX FIFO is full.
-            }
-
-            // Get how much space is left in TX FIFO.
-            let tx_space = 8 - ((self.registers.STAT.read() >> 24) & 0b111);
-
-            // How many bits can we maximally add to the FIFO?
-            let ct = if bit_ct > tx_space { tx_space } else { bit_ct };
-
-            // Get that many bits from the target byte.
-            let to_write = bits & !(1 << ct);
-            bits >>= ct;
-            bit_ct -= ct;
-
-            // Add to FIFO.
-            self.registers.IO.write(to_write);
+        while self.registers.LSR.read() & LsrStatus::TxAvailable as u8 == 0 {
+            // Spin while TX FIFO is full.
         }
+
+        // Add to FIFO.
+        self.registers.IO.write(byte);
     }
 
     /// Returns `true` if there is at least one byte ready to be read. If this
     /// method returns `true`, a subsequent call to `read_byte` is guaranteed to
     /// return immediately. This method does not block.
     pub fn has_byte(&self) -> bool {
-        // Get how much space is left in RX FIFO.
-        ((self.registers.STAT.read() >> 16) & 0b111) == 8
+        ((self.registers.STAT.read() >> 16) & 0b111) != 0
     }
 
     /// Blocks until there is a byte ready to read. If a read timeout is set,
@@ -138,19 +117,19 @@ impl MiniUart {
     /// return immediately.
     pub fn wait_for_byte(&self) -> Result<(), ()> {
         let start = timer::current_time();
-        let target = match self.timeout {
-            Some(ms) => start + (ms as u64 * 1000),
-            None => (1 << 63) // This will not lapse for 300000 years.
-        };
 
-        while timer::current_time() <= target {
-            // Spin while timeout pending.
-            if self.has_byte() {
-                return Ok(());
+        while !self.has_byte() {
+            match self.timeout {
+                Some(ms) => {
+                    if timer::current_time() > start + ms as u64 {
+                        return Err(())
+                    }
+                },
+                None => ()
             }
         }
-        // Timeout lapsed.
-        Err(())
+
+        Ok(())
     }
 
     /// Reads a byte. Blocks indefinitely until a byte is ready to be read.
@@ -165,13 +144,14 @@ impl MiniUart {
 impl fmt::Write for MiniUart {
     fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
         for b in s.as_bytes() {
+            // Must write a CR before a NL.
             if *b == b'\n' {
                 self.write_byte(b'\r');
-                self.write_byte(b'\n');
-            } else {
-                self.write_byte(*b);
             }
+
+            self.write_byte(*b);
         }
+
         Ok(())
     }
 }
@@ -181,28 +161,22 @@ mod uart_io {
     use std::io;
     use super::MiniUart;
 
-    // FIXME: Implement `io::Read` and `io::Write` for `MiniUart`.
-    //
-    // The `io::Read::read()` implementation must respect the read timeout by
-    // waiting at most that time for the _first byte_. It should not wait for
-    // any additional bytes but _should_ read as many bytes as possible. If the
-    // read times out, an error of kind `TimedOut` should be returned.
-    //
-    // The `io::Write::write()` method must write all of the requested bytes
-    // before returning.
-
     impl io::Read for MiniUart {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            // How do I know when the data stream is over?
             match self.wait_for_byte() {
-                Err(()) => Err(io::Error::new(
-                            io::ErrorKind::TimedOut, "Read timed out."
-                        )),
-                Ok(()) => for b in buf.iter_mut() {
-                    *b = self.read_byte();
+                Err(()) => Err(io::Error::new(io::ErrorKind::TimedOut, "Read timed out.")),
+                Ok(()) => {
+                    let mut read = 0usize;
+                    let mut iter = buf.iter_mut();
+
+                    while let (Some(b), true) = (iter.next(), self.has_byte()) {
+                        *b = self.read_byte();
+                        read += 1;
+                    }
+
+                    Ok(read)
                 }
             }
-            Ok(buf.len())
         }
     }
 
@@ -212,6 +186,10 @@ mod uart_io {
                 self.write_byte(*b);
             }
             Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> Result<(), io::Error> {
+            Ok(())
         }
     }
 }
