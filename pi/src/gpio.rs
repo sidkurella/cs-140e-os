@@ -102,7 +102,24 @@ impl Gpio<Uninitialized> {
     /// Enables the alternative function `function` for `self`. Consumes self
     /// and returns a `Gpio` structure in the `Alt` state.
     pub fn into_alt(self, function: Function) -> Gpio<Alt> {
-        unimplemented!()
+        // Ten pins to a GPIO reg.
+        let pin_no = self.pin % 10;
+        // Each pin has a 3 bit function select.
+        let pin_bits = pin_no * 3;
+
+        {
+            let reg = &mut self.registers.FSEL[self.pin as usize / 10];
+
+            let mut selection = reg.read();
+            // First zero out the current selection.
+            selection &= !(0b111 << pin_bits);
+            // Set new function.
+            selection |= (function as u32) << pin_bits;
+
+            reg.write(selection);
+        }
+
+        self.transition()
     }
 
     /// Sets this pin to be an _output_ pin. Consumes self and returns a `Gpio`
@@ -121,12 +138,18 @@ impl Gpio<Uninitialized> {
 impl Gpio<Output> {
     /// Sets (turns on) the pin.
     pub fn set(&mut self) {
-        unimplemented!()
+        // Ten pins to a GPIO reg.
+        let pin_no = self.pin % 32;
+
+        self.registers.SET[self.pin as usize / 32].write(1 << pin_no);
     }
 
     /// Clears (turns off) the pin.
     pub fn clear(&mut self) {
-        unimplemented!()
+        // Ten pins to a GPIO reg.
+        let pin_no = self.pin % 32;
+
+        self.registers.CLR[self.pin as usize / 32].write(1 << pin_no);
     }
 }
 
@@ -134,6 +157,10 @@ impl Gpio<Input> {
     /// Reads the pin's value. Returns `true` if the level is high and `false`
     /// if the level is low.
     pub fn level(&mut self) -> bool {
-        unimplemented!()
+        // Ten pins to a GPIO reg.
+        let pin_no = self.pin % 32;
+
+        self.registers.LEV[self.pin as usize / 32].read()
+            & (1 << pin_no) != 0
     }
 }
