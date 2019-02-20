@@ -61,6 +61,10 @@ impl MiniUart {
     /// By default, reads will never time out. To set a read timeout, use
     /// `set_read_timeout()`.
     pub fn new() -> MiniUart {
+        // Set GPIO pins 14 and 15 to Alt 5 function.
+        Gpio::new(14).into_alt(Function::Alt5);
+        Gpio::new(15).into_alt(Function::Alt5);
+
         let registers = unsafe {
             // Enable the mini UART as an auxiliary device.
             (*AUX_ENABLES).or_mask(1);
@@ -73,10 +77,6 @@ impl MiniUart {
         registers.BAUD.write(270);
         // Enable UART TX and RX.
         registers.CNTL.write(0b11);
-
-        // Set GPIO pins 14 and 15 to Alt 5 function.
-        Gpio::new(14).into_alt(Function::Alt5);
-        Gpio::new(15).into_alt(Function::Alt5);
 
         MiniUart {
             registers: registers,
@@ -104,7 +104,7 @@ impl MiniUart {
     /// method returns `true`, a subsequent call to `read_byte` is guaranteed to
     /// return immediately. This method does not block.
     pub fn has_byte(&self) -> bool {
-        ((self.registers.STAT.read() >> 16) & 0b111) != 0
+        (self.registers.LSR.read() & LsrStatus::DataReady as u8) != 0
     }
 
     /// Blocks until there is a byte ready to read. If a read timeout is set,
@@ -137,6 +137,7 @@ impl MiniUart {
         while !self.has_byte() {
             // Spin while waiting for a byte.
         }
+
         self.registers.IO.read()
     }
 }

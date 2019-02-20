@@ -17,14 +17,12 @@ pub mod mutex;
 pub mod console;
 pub mod shell;
 
+use console::{kprint, kprintln, CONSOLE};
+
 #[no_mangle]
 pub extern "C" fn kmain() {
-    let mut pin = pi::gpio::Gpio::new(16).into_output();
 
     loop {
-        pin.set();
-        pi::timer::spin_sleep_ms(250);
-        pin.clear();
-        pi::timer::spin_sleep_ms(250);
+        kprint!("a");
     }
 }
