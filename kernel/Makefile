@@ -1,5 +1,5 @@
 TARGET ?= aarch64-none-elf
-CROSS ?= aarch64-linux-gnu
+CROSS ?= $(TARGET)
 
 CC := $(CROSS)-gcc
 CCFLAGS ?= -Wall -O2 -nostdlib -nostartfiles -ffreestanding -pie -fpie
