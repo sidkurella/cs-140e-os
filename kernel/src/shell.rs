@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::str;
 
 use console::{kprint, kprintln, CONSOLE};
 use stack_vec::StackVec;
@@ -104,7 +105,7 @@ pub fn shell(prefix: &str) -> ! {
         }
 
         {
-            let input_str = std::str::from_utf8(input_vec.as_slice())
+            let input_str = str::from_utf8(input_vec.as_slice())
                                     .expect("failed to decode utf8");
             let mut input_args = [input_str; MAX_ARGLEN];
 

@@ -20,7 +20,7 @@ impl Console {
     #[inline]
     fn initialize(&mut self) {
         if self.inner.is_none() {
-            self.inner = Some(pi::uart::MiniUart::new())
+            self.inner = Some(MiniUart::new())
         }
     }
 
