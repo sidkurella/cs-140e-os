@@ -121,7 +121,7 @@ impl MiniUart {
         while !self.has_byte() {
             match self.timeout {
                 Some(ms) => {
-                    if timer::current_time() > start + ms as u64 {
+                    if timer::current_time() > start + ms * 1000 as u64 {
                         return Err(())
                     }
                 },
