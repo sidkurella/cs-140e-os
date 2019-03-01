@@ -6,8 +6,7 @@
 #![feature(decl_macro)]
 #![feature(repr_align)]
 #![feature(attr_literals)]
-#![feature(exclusive_range_pattern)]
-#![feature(alloc, allocator_api, global_allocator)]
+#![feature(exclusive_range_pattern)] #![feature(alloc, allocator_api, global_allocator)]
 
 #[macro_use]
 #[allow(unused_imports)]
@@ -46,5 +45,6 @@ pub extern "C" fn kmain() {
   ███████╗╚██████╔╝██╔╝ ██╗   ██║   ╚██████╔╝███████║
   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚══════╝
 ");
+    assert_eq!(1, 2);
     shell::shell("> ");
 }
