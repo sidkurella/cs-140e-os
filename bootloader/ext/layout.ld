@@ -5,7 +5,7 @@ SECTIONS {
   _start = .;
 
   .text : {
-      KEEP(*(.text.init)) /* from init.S */
+      KEEP(*(.text.init .text.boot)) /* from init.S */
       *(.text .text.* .gnu.linkonce.t*)
   }
 
