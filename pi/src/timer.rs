@@ -30,9 +30,19 @@ impl Timer {
     /// Reads the system timer's counter and returns the 64-bit counter value.
     /// The returned value is the number of elapsed microseconds.
     pub fn read(&self) -> u64 {
-        let mut x : u64 = u64::from(self.registers.CHI.read()) << 32;
-        x += u64::from(self.registers.CLO.read());
-        x
+        let count : u64;
+        let interval : u64;
+
+        unsafe {
+            asm!("mrs $0, cntpct_el0" : "=r"(count));
+            asm!("mrs $0, cntfrq_el0" : "=r"(interval));
+        }
+
+        count / (interval / 1000000)
+
+        // let mut x : u64 = u64::from(self.registers.CHI.read()) << 32;
+        // x += u64::from(self.registers.CLO.read());
+        // x
     }
 }
 

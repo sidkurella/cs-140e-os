@@ -3,6 +3,9 @@
 extern crate xmodem;
 extern crate pi;
 
+use std::fmt::Write;
+use std::io;
+
 pub mod lang_items;
 
 /// Start address of the binary to load and of the bootloader.
@@ -29,16 +32,30 @@ fn jump_to(addr: *mut u8) -> ! {
     }
 }
 
-pub fn boot() {
-    let mut mu = pi::uart::MiniUart::new();
+pub fn boot() -> ! {
+    let mut console = pi::uart::MiniUart::new();
+
     loop {
-        use std::fmt::Write;
-        mu.write_str("a");
+        let output = unsafe { std::slice::from_raw_parts_mut(BINARY_START, MAX_BINARY_SIZE) };
+        let mut uart = pi::uart::MiniUart::new();
+        uart.set_read_timeout(750);
+
+        match xmodem::Xmodem::receive(uart, output) {
+            Ok(_) => {
+                write!(&mut console, "load complete").unwrap();
+                jump_to(BINARY_START)
+            },
+            Err(e) => if e.kind() != io::ErrorKind::TimedOut {
+                write!(&mut console, "failed receive: {:?}\n", e).unwrap();
+            }
+        }
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn kmain() {
     std::ptr::copy(BINARY_START, BOOTLOADER_START, BOOTLOADER_SIZE);
-    jump_to(std::mem::transmute(boot as *const fn () -> ()));
+
+    let addr : usize = std::mem::transmute(boot as *const fn () -> ());
+    jump_to(std::mem::transmute(addr - BINARY_START_ADDR + BOOTLOADER_START_ADDR));
 }
