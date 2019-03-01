@@ -23,6 +23,7 @@ use console::{kprint, kprintln, CONSOLE};
 pub extern "C" fn kmain() {
 
     loop {
-        kprint!("a");
+        kprintln!("ayy");
+        pi::timer::spin_sleep_ms(500);
     }
 }

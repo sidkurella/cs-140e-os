@@ -20,7 +20,7 @@ impl Console {
     #[inline]
     fn initialize(&mut self) {
         if self.inner.is_none() {
-            self.inner = Some(pi::uart::MiniUart::new())
+            self.inner = Some(MiniUart::new())
         }
     }
 
@@ -60,10 +60,7 @@ impl io::Write for Console {
 
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        match self.inner().write_str(s) {
-            Ok(size) => Ok(()),
-            Err(_) => Err(fmt::Error)
-        }
+        self.inner().write_str(s)
     }
 }
 
