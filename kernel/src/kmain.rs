@@ -33,6 +33,7 @@ pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILE_SYSTEM: FileSystem = FileSystem::uninitialized();
 
 use console::{kprint, kprintln, CONSOLE};
+use pi::atags;
 
 #[no_mangle]
 #[cfg(not(test))]
@@ -45,6 +46,10 @@ pub extern "C" fn kmain() {
   ███████╗╚██████╔╝██╔╝ ██╗   ██║   ╚██████╔╝███████║
   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚══════╝
 ");
-    assert_eq!(1, 2);
-    shell::shell("> ");
+    //assert_eq!(1, 2);
+    //shell::shell("> ");
+    for a in atags::Atags::get() {
+        kprintln!("{:#?}", a);
+    }
+    kprintln!("Atags done");
 }

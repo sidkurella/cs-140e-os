@@ -8,7 +8,7 @@ const ATAG_BASE: usize = 0x100;
 
 /// An iterator over the ATAGS on this system.
 pub struct Atags {
-    ptr: &'static raw::Atag,
+    ptr: &'static raw::Atag
 }
 
 impl Atags {
@@ -24,6 +24,15 @@ impl Iterator for Atags {
     type Item = Atag;
 
     fn next(&mut self) -> Option<Atag> {
-        unimplemented!("atags iterator")
+        // Get current Atag
+        let ret = Atag::from(self.ptr);
+
+        match self.ptr.next() {
+            Some(x) => {
+                self.ptr = x;
+                Some(ret)
+            },
+            None => None
+        }
     }
 }
