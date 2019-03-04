@@ -6,6 +6,8 @@
 #![feature(decl_macro)]
 #![feature(exclusive_range_pattern)]
 #![feature(alloc, allocator_api)]
+#![feature(raw_vec_internals)]
+
 
 #[macro_use]
 #[allow(unused_imports)]

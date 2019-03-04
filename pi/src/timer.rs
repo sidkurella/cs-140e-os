@@ -29,6 +29,14 @@ impl Timer {
 
     /// Reads the system timer's counter and returns the 64-bit counter value.
     /// The returned value is the number of elapsed microseconds.
+    #[cfg(unix)]
+    pub fn read(&self) -> u64 {
+        0
+    }
+
+    /// Reads the system timer's counter and returns the 64-bit counter value.
+    /// The returned value is the number of elapsed microseconds.
+    #[cfg(not(unix))]
     pub fn read(&self) -> u64 {
         let count : u64;
         let interval : u64;

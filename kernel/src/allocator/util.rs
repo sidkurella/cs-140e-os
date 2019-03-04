@@ -18,5 +18,6 @@ pub fn align_down(addr: usize, align: usize) -> usize {
 ///
 /// Panics if `align` is not a power of 2.
 pub fn align_up(addr: usize, align: usize) -> usize {
-    align_down(addr - 1 + align, align)
+    assert!(align.is_power_of_two());
+    align_down(addr + (align - 1), align)
 }

@@ -1,5 +1,5 @@
 use std::fmt;
-use alloc::heap::{AllocErr, Layout};
+use alloc::alloc::{AllocErr, Layout};
 
 use allocator::util::*;
 use allocator::linked_list::LinkedList;
