@@ -55,7 +55,7 @@ impl From<raw::Mem> for Atag {
 
 impl<'a> From<&'a raw::Cmd> for Atag {
     fn from(kind: &raw::Cmd) -> Atag {
-        let mut len : usize = 1;
+        let mut len : usize = 0;
         let base_addr = &kind.cmd as *const u8;
 
         unsafe {
