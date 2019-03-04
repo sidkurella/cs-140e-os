@@ -96,14 +96,18 @@ fn memory_map() -> Option<(usize, usize)> {
     for a in atags::Atags::get() {
         if a.mem().is_some() {
             let mem = a.mem().unwrap();
-            start = max(start, mem.start as usize);
-            len = Some(mem.size as usize);
+            if mem.start as usize > start {
+                start = mem.start as usize;
+                len = Some(mem.size as usize);
+            } else {
+                len = Some(mem.size as usize - (binary_end - mem.start) as usize);
+            }
             break;
         }
     }
 
     match len {
-        Some(x) => Some((start, x)),
+        Some(l) => Some((start, l + start)),
         None => None
     }
 }
