@@ -49,24 +49,8 @@ pub extern "C" fn kmain() {
   ███████╗╚██████╔╝██╔╝ ██╗   ██║   ╚██████╔╝███████║
   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚══════╝
 ");
-    //assert_eq!(1, 2);
-    //shell::shell("> ");
-    for a in atags::Atags::get() {
-        kprintln!("{:#?}", a);
-    }
-    kprintln!("Atags done");
-
-    {
-        let p = vec![0; 10];
-        kprintln!("{:?}", p);
-
-        let q = vec![0..10];
-        kprintln!("{:?}", q);
-
-        let mut r : Vec<usize> = (0..200000).collect();
-        r.remove(24);
-        kprintln!("{:?}", r[0]);
-    }
 
     kprintln!("OK");
+
+    loop { unsafe { asm!("wfe" ::: "volatile"); } }
 }

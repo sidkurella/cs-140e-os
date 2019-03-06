@@ -117,8 +117,8 @@ mod allocator {
         }
     }
 
-    test_allocators!(bin_exhausted, bump_exhausted, 128, |(_, _, mut a)| {
-        let e = a.alloc(layout!(1024, 128)).unwrap_err();
+    test_allocators!(bin_exhausted, bump_exhausted, 65536, |(_, _, mut a)| {
+        let e = a.alloc(layout!(65537, 128)).unwrap_err();
         assert_eq!(e, AllocErr)
     });
 
@@ -221,7 +221,7 @@ mod allocator {
         }
     });
 
-    test_allocators!(@bin, bin_dealloc_2, 8192, |(_, _, mut a)| {
+        test_allocators!(@bin, bin_dealloc_2, 65536, |(_, _, mut a)| {
         let layouts = [
             layout!(3072, 16),
             layout!(512, 32),
@@ -248,10 +248,12 @@ mod allocator {
 mod linked_list {
     use allocator::linked_list::LinkedList;
 
+    struct Slot(usize, usize);
+
     #[test]
     fn example_1() {
-        let address_1 = (&mut (1 as u8)) as *mut u8;
-        let address_2 = (&mut (2 as u8)) as *mut u8;
+        let address_1 = (&mut (Slot(1, 2))) as *mut Slot as *mut u8;
+        let address_2 = (&mut (Slot(3, 4))) as *mut Slot as *mut u8;
 
         let mut list = LinkedList::new();
         unsafe {

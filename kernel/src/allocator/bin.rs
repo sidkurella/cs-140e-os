@@ -1,5 +1,6 @@
 use std::fmt;
 use std::mem;
+use std::mem::ManuallyDrop;
 use std::ptr;
 use alloc::alloc::{AllocErr, Layout};
 
@@ -11,8 +12,65 @@ const PAGE_SIZE : usize = 1 << PAGE_ORDER;
 
 const MAX_BLOCK_ORDER : usize = 10;
 
-
 use console::{kprint, kprintln, CONSOLE};
+
+macro_rules! construct_array {
+    ($e: expr, $n:expr) => (
+        {
+            use std::mem;
+            use std::ptr;
+
+            struct ArrayBuilder<T> {
+                len: isize,
+                data: *mut T,
+            }
+
+            impl<T> ArrayBuilder<T> {
+                fn new(v: &mut ManuallyDrop<[T; $n]>) -> ArrayBuilder<T> {
+                    ArrayBuilder {
+                        len: 0,
+                        data: (&mut *v as *mut _) as *mut _
+                    }
+                }
+
+                unsafe fn write(&mut self, val: T) {
+                    debug_assert!(self.len < $n as isize);
+
+                    ptr::write(self.data.offset(self.len), val);
+                    self.len += 1;
+                }
+            }
+
+            impl<T> Drop for ArrayBuilder<T> {
+                fn drop(&mut self) {
+                    unsafe {
+                        while self.len > 0 {
+                            let offset = self.len - 1;
+                            self.len -= 1;
+                            ptr::drop_in_place(self.data.offset(offset));
+                        }
+                    }
+                }
+            }
+
+            let mut v: ManuallyDrop<[_; $n]> = ManuallyDrop::new(unsafe {
+                mem::uninitialized()
+            });
+
+            if false { v[0] = $e(0); }
+
+            let mut builder = ArrayBuilder::new(&mut v);
+            for i in 0..$n {
+                let mut val = $e(i);
+                unsafe { builder.write(val); }
+            }
+
+            builder.len = 0;
+            ManuallyDrop::into_inner(v)
+        }
+    )
+}
+
 
 #[derive(Debug)]
 struct Bitmap {
@@ -28,14 +86,6 @@ impl Bitmap {
         }
     }
 
-    pub unsafe fn new_zero(length: usize, data: *mut u8) -> Bitmap {
-        let bitmap = Bitmap::new(length, data);
-        for byte in bitmap.slice().iter_mut() {
-            *byte = 0;
-        }
-        bitmap
-    }
-
     pub fn length(&self) -> usize {
         self.length
     }
@@ -49,6 +99,13 @@ impl Bitmap {
             std::slice::from_raw_parts_mut(self.data as *mut u8, self.length_bytes())
         }
     }
+
+    pub fn zero(&self) {
+        for byte in self.slice().iter_mut() {
+            *byte = 0;
+        }
+    }
+
 
     #[inline]
     fn byte(&self, bit: usize) -> &mut u8 {
@@ -91,6 +148,7 @@ struct BuddyBlockAllocatorZone {
 
 impl BuddyBlockAllocatorZone {
     pub fn new(start: usize, order: usize, map: Bitmap) -> BuddyBlockAllocatorZone {
+        map.zero();
         BuddyBlockAllocatorZone {
             free_list: LinkedList::new(),
             start: start,
@@ -110,7 +168,7 @@ impl BuddyBlockAllocatorZone {
     }
 
     #[inline]
-    fn get_ptr_buddy(&self, ptr: *mut u8) -> *mut u8 {
+    pub fn get_ptr_buddy(&self, ptr: *mut u8) -> *mut u8 {
         let mask = 1 << (PAGE_ORDER + self.order);
 
         (((ptr as usize - self.start) ^ mask) + self.start) as *mut u8
@@ -161,27 +219,23 @@ impl BuddyBlockAllocator {
     pub fn new(start: usize, end: usize) -> BuddyBlockAllocator {
         let num_pages = (end - start) >> PAGE_ORDER;
 
-        let mut mem_start = align_up(start + num_pages / 4 + MAX_BLOCK_ORDER, PAGE_SIZE);
+        let mut arr_ptr = start;
+        let mut maps = construct_array!(|idx| {
+            let bitmap = unsafe { Bitmap::new(num_pages >> (idx + 1), arr_ptr as *mut u8) };
+            arr_ptr += bitmap.length_bytes();
+            Some(bitmap)
+        }, MAX_BLOCK_ORDER + 1);
+
+        let mut mem_start = align_up(arr_ptr, PAGE_SIZE);
         let mem_end = align_down(end, PAGE_SIZE);
 
-        let mut arr_ptr = start;
-        let mut zones: [_; MAX_BLOCK_ORDER + 1] = unsafe { mem::uninitialized() };
-
-        for i in 0 ..= MAX_BLOCK_ORDER {
-            let bitmap = unsafe { Bitmap::new_zero(num_pages >> i, arr_ptr as *mut u8) };
-
-            arr_ptr += bitmap.length_bytes();
-
-            let zone = BuddyBlockAllocatorZone::new(mem_start, i, bitmap);
-
-            unsafe {
-                ptr::copy_nonoverlapping(&zone, &mut zones[i], 1);
-                mem::forget(zone);
-            }
-        }
+        assert!(mem_start <= mem_end, "not enough available memory");
 
         let mut allocator = BuddyBlockAllocator {
-            zones: zones
+            zones: construct_array!(|idx| {
+                    BuddyBlockAllocatorZone::new(mem_start, idx,
+                                                 maps[idx].take().unwrap())
+                }, MAX_BLOCK_ORDER + 1)
         };
 
         for order in (0 ..= MAX_BLOCK_ORDER).rev() {
@@ -208,7 +262,7 @@ impl BuddyBlockAllocator {
             Ok(ptr)
         } else if (order != MAX_BLOCK_ORDER) {
             if let Ok(lower) = self.alloc(order + 1) {
-                let higher = ((lower as usize) ^ (1 << (PAGE_ORDER + order))) as *mut u8;
+                let higher = self.zones[order].get_ptr_buddy(lower);
 
                 self.zones[order].free(lower);
 
