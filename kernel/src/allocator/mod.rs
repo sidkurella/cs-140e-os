@@ -1,7 +1,7 @@
 mod linked_list;
 mod util;
 
-#[path = "bump.rs"]
+#[path = "bin.rs"]
 mod imp;
 
 #[cfg(test)]
@@ -89,25 +89,14 @@ extern "C" {
 ///
 /// This function is expected to return `Some` under all normal cirumstances.
 fn memory_map() -> Option<(usize, usize)> {
-    let binary_end = unsafe { (&_end as *const u8) as u32 };
+    let binary_end = unsafe { (&_end as *const u8) as usize };
 
-    let mut start = binary_end as usize;
-    let mut len = None;
     for a in atags::Atags::get() {
-        if a.mem().is_some() {
-            let mem = a.mem().unwrap();
-            if mem.start as usize > start {
-                start = mem.start as usize;
-                len = Some(mem.size as usize);
-            } else {
-                len = Some(mem.size as usize - (binary_end - mem.start) as usize);
-            }
-            break;
+        if let Some(mem) = a.mem() {
+            let start = max(mem.start as usize, binary_end);
+            return Some((start, mem.start as usize + mem.size as usize))
         }
     }
 
-    match len {
-        Some(l) => Some((start, l + start)),
-        None => None
-    }
+    None
 }

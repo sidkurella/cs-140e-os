@@ -4,7 +4,7 @@ use std::{fmt, ptr};
 
 /// An _instrusive_ linked list of addresses.
 ///
-/// A `LinkedList` maintains a list of `*mut usize`s. The user of the
+/// A `LinkedList` maintains a list of `*mut u8`s. The user of the
 /// `LinkedList` guarantees that the passed in pointer refers to valid, unique,
 /// writeable memory at least `usize` in size.
 ///
@@ -15,8 +15,8 @@ use std::{fmt, ptr};
 /// returned using `pop()` or returned (but not removed) using `peek()`.
 ///
 /// ```rust
-/// # let address_1 = (&mut (1 as usize)) as *mut usize;
-/// # let address_2 = (&mut (2 as usize)) as *mut usize;
+/// # let address_1 = (&mut (1 as usize)) as *mut u8;
+/// # let address_2 = (&mut (2 as usize)) as *mut u8;
 /// let mut list = LinkedList::new();
 /// unsafe {
 ///     list.push(address_1);
@@ -36,9 +36,9 @@ use std::{fmt, ptr};
 /// the value from the list, respectively.
 ///
 /// ```rust
-/// # let address_1 = (&mut (1 as usize)) as *mut usize;
-/// # let address_2 = (&mut (2 as usize)) as *mut usize;
-/// # let address_3 = (&mut (3 as usize)) as *mut usize;
+/// # let address_1 = (&mut (1 as usize)) as *mut u8;
+/// # let address_2 = (&mut (2 as usize)) as *mut u8;
+/// # let address_3 = (&mut (3 as usize)) as *mut u8;
 /// let mut list = LinkedList::new();
 /// unsafe {
 ///     list.push(address_1);
@@ -56,9 +56,28 @@ use std::{fmt, ptr};
 /// assert_eq!(list.pop(), Some(address_1));
 /// assert_eq!(list.pop(), None);
 /// ```
+
+#[repr(C)]
+struct LinkedListEntry {
+    prev: *mut LinkedListEntry,
+    next: *mut LinkedListEntry
+}
+
+impl LinkedListEntry {
+
+    pub unsafe fn prev(&self) -> Option<&mut LinkedListEntry> {
+        self.prev.as_mut()
+    }
+
+    pub unsafe fn next(&self) -> Option<&mut LinkedListEntry> {
+        self.next.as_mut()
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct LinkedList {
-    head: *mut usize,
+    head: *mut LinkedListEntry,
+    tail: *mut LinkedListEntry
 }
 
 unsafe impl Send for LinkedList {}
@@ -66,7 +85,10 @@ unsafe impl Send for LinkedList {}
 impl LinkedList {
     /// Returns a new, empty linked list.
     pub const fn new() -> LinkedList {
-        LinkedList { head: ptr::null_mut() }
+        LinkedList {
+            head: ptr::null_mut(),
+            tail: ptr::null_mut()
+        }
     }
 
     /// Returns `true` if the list is empty and `false` otherwise.
@@ -83,41 +105,65 @@ impl LinkedList {
     /// Barring the uniqueness constraint, this is equivalent to ensuring that
     /// `*item = some_usize` is a safe operation as long as the pointer resides
     /// in `self`.
-    pub unsafe fn push(&mut self, item: *mut usize) {
-        *item = self.head as usize;
-        self.head = item;
+    pub unsafe fn push(&mut self, item: *mut u8) {
+        let item_raw = item as *mut LinkedListEntry;
+        let item_ll  = &mut *item_raw;
+
+        item_ll.prev = ptr::null_mut();
+        item_ll.next = self.head;
+
+        self.head = item_raw;
+        if self.tail == ptr::null_mut() {
+            self.tail = item_raw;
+        }
     }
 
     /// Removes and returns the first item in the list, if any.
-    pub fn pop(&mut self) -> Option<*mut usize> {
-        let value = self.peek()?;
-        self.head = unsafe { *value as *mut usize };
-        Some(value)
+    pub fn pop(&mut self) -> Option<*mut u8> {
+        let item_raw = self.peek()? as *mut LinkedListEntry;
+        let item_ll  = unsafe { &mut *item_raw };
+
+        self.head = item_ll.next;
+
+        if let Some(next_ll) = unsafe { item_ll.next() } {
+            next_ll.prev = ptr::null_mut();
+        } else {
+            self.tail = ptr::null_mut();
+        }
+
+        Some(item_raw as *mut u8)
     }
 
     /// Returns the first item in the list without removing it, if any.
-    pub fn peek(&self) -> Option<*mut usize> {
+    pub fn peek(&self) -> Option<*mut u8> {
         match self.is_empty() {
             true => None,
-            false => Some(self.head),
+            false => Some(self.head as *mut u8),
+        }
+    }
+
+
+    /// Removes the specified item from the list.
+    pub unsafe fn remove(&mut self, item: *mut u8) {
+        let item_raw = item as *mut LinkedListEntry;
+        let item_ll  = &mut *item_raw;
+
+        if let Some(prev_ll) = item_ll.prev() {
+            prev_ll.next = item_ll.next;
+        } else {
+            self.head = ptr::null_mut();
+        }
+
+        if let Some(next_ll) = item_ll.next() {
+            next_ll.prev = item_ll.prev;
+        } else {
+            self.tail = ptr::null_mut();
         }
     }
 
     /// Returns an iterator over the items in this list.
     pub fn iter(&self) -> Iter {
         Iter { current: self.head, _list: self }
-    }
-
-    /// Returns an iterator over the items in this list.
-    ///
-    /// The items returned from the iterator (of type `Node`) allows the given
-    /// item to be removed from the linked list via the `Node::pop()` method.
-    pub fn iter_mut(&mut self) -> IterMut {
-        IterMut {
-            prev: &mut self.head as *mut *mut usize as *mut usize,
-            current: self.head,
-            _list: self
-        }
     }
 }
 
@@ -130,56 +176,15 @@ impl fmt::Debug for LinkedList {
 /// An iterator over the items of the linked list.
 pub struct Iter<'a> {
     _list: &'a LinkedList,
-    current: *mut usize
+    current: *mut LinkedListEntry
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = *mut usize;
+    type Item = *mut u8;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut list = LinkedList { head: self.current };
-        let value = list.pop()?;
-        self.current = list.head;
-        Some(value)
-    }
-}
-
-/// An item returned from a mutable iterator of a `LinkedList`.
-pub struct Node {
-    prev: *mut usize,
-    value: *mut usize
-}
-
-impl Node {
-    /// Removes and returns the value of this item from the linked list it
-    /// belongs to.
-    pub fn pop(self) -> *mut usize {
-        unsafe { *(self.prev) = *(self.value); }
-        self.value
-    }
-
-    /// Returns the value of this element.
-    pub fn value(&self) -> *mut usize {
-        self.value
-    }
-}
-
-/// An iterator over the items of the linked list allowing mutability.
-pub struct IterMut<'a> {
-    _list: &'a mut LinkedList,
-    prev: *mut usize,
-    current: *mut usize
-}
-
-impl<'a> Iterator for IterMut<'a> {
-    type Item = Node;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut list = LinkedList { head: self.current };
-        let value = list.pop()?;
-        let prev = self.prev;
-        self.prev = self.current;
-        self.current = list.head;
-        Some(Node { prev, value })
+        let value = self.current;
+        self.current = unsafe { (*self.current).next };
+        Some(value as *mut u8)
     }
 }

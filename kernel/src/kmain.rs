@@ -39,6 +39,8 @@ use pi::atags;
 #[no_mangle]
 #[cfg(not(test))]
 pub extern "C" fn kmain() {
+    ALLOCATOR.initialize();
+
     kprintln!("
   ██████╗  ██████╗ ██╗  ██╗██╗   ██╗ ██████╗ ███████╗
   ╚════██╗██╔═████╗╚██╗██╔╝╚██╗ ██╔╝██╔═══██╗██╔════╝
@@ -53,4 +55,18 @@ pub extern "C" fn kmain() {
         kprintln!("{:#?}", a);
     }
     kprintln!("Atags done");
+
+    {
+        let p = vec![0; 10];
+        kprintln!("{:?}", p);
+
+        let q = vec![0..10];
+        kprintln!("{:?}", q);
+
+        let mut r : Vec<usize> = (0..200000).collect();
+        r.remove(24);
+        kprintln!("{:?}", r[0]);
+    }
+
+    kprintln!("OK");
 }
