@@ -2,6 +2,9 @@ use std::fmt;
 use std::mem;
 use std::mem::ManuallyDrop;
 use std::ptr;
+
+use std::cmp::max;
+
 use alloc::alloc::{AllocErr, Layout};
 
 use allocator::util::*;
@@ -11,6 +14,15 @@ const PAGE_ORDER : usize = 14;
 const PAGE_SIZE : usize = 1 << PAGE_ORDER;
 
 const MAX_BLOCK_ORDER : usize = 10;
+
+const SLAB_MIN_ORDER : usize = 3;
+const SLAB_MIN_SZ : usize = 1 << SLAB_MIN_ORDER;
+
+const SLAB_MAX_ORDER : usize = PAGE_ORDER - 1;
+const SLAB_MAX_SZ : usize = 1 << SLAB_MAX_ORDER;
+
+const SLAB_ORDER : usize = PAGE_ORDER;
+const SLAB_SZ : usize = PAGE_SIZE; // Should probably be increased later.
 
 use console::{kprint, kprintln, CONSOLE};
 
@@ -86,6 +98,11 @@ impl Bitmap {
         }
     }
 
+    /// Returns byte-width of Bitmap storing bits number of bits.
+    pub fn width(bits: usize) -> usize {
+        bits / 8 + if bits % 8 == 0 { 0 } else { 1 }
+    }
+
     pub fn length(&self) -> usize {
         self.length
     }
@@ -113,27 +130,50 @@ impl Bitmap {
     }
 
     pub fn get_bit(&self, bit: usize) -> bool {
-        assert!(bit <= self.length);
+        assert!(bit < self.length);
 
         ((*self.byte(bit) >> (bit % 8)) & 1) != 0
     }
 
     pub fn clear_bit(&self, bit: usize) {
-        assert!(bit <= self.length);
+        assert!(bit < self.length);
 
         *self.byte(bit) &= !(1 << (bit % 8));
     }
 
     pub fn set_bit(&self, bit: usize) {
-        assert!(bit <= self.length);
+        assert!(bit < self.length);
 
         *self.byte(bit) |= 1 << (bit % 8);
     }
 
     pub fn toggle_bit(&self, bit: usize) {
-        assert!(bit <= self.length);
+        assert!(bit < self.length);
 
         *self.byte(bit) ^= 1 << (bit % 8);
+    }
+
+    pub fn iter(&self) -> BitmapIter {
+        BitmapIter { _map: self, current: 0}
+    }
+}
+
+struct BitmapIter<'a> {
+    _map: &'a Bitmap,
+    current: usize
+}
+
+impl<'a> Iterator for BitmapIter<'a> {
+    type Item = bool;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self._map.length() {
+            let ret = self._map.get_bit(self.current);
+            self.current += 1;
+            Some(ret)
+        } else {
+            None
+        }
     }
 }
 
@@ -207,6 +247,15 @@ impl BuddyBlockAllocatorZone {
             }
         }
     }
+
+    pub fn floor_alloc(&self, ptr: *mut u8) -> *mut u8 {
+        let addr = align_down(
+            ptr as usize - self.start,
+            1 << (self.order + PAGE_ORDER)
+        ) + self.start;
+
+        addr as *mut u8
+    }
 }
 
 #[derive(Debug)]
@@ -221,7 +270,9 @@ impl BuddyBlockAllocator {
 
         let mut arr_ptr = start;
         let mut maps = construct_array!(|idx| {
-            let bitmap = unsafe { Bitmap::new(num_pages >> (idx + 1), arr_ptr as *mut u8) };
+            let bitmap = unsafe {
+                Bitmap::new((num_pages >> (idx + 1)) + 1usize, arr_ptr as *mut u8)
+            };
             arr_ptr += bitmap.length_bytes();
             Some(bitmap)
         }, MAX_BLOCK_ORDER + 1);
@@ -282,13 +333,165 @@ impl BuddyBlockAllocator {
             }
         }
     }
+
+    pub fn floor_alloc(&self, ptr: *mut u8, order: usize) -> *mut u8 {
+        self.zones[order].floor_alloc(ptr)
+    }
 }
 
+#[derive(Debug)]
+struct AllocBin {
+    order: usize,
+    free: LinkedList,
+    partial: LinkedList,
+    full: LinkedList
+}
+
+impl AllocBin {
+    fn new(order: usize) -> AllocBin {
+        AllocBin {
+            order: order,
+            free: LinkedList::new(),
+            partial: LinkedList::new(),
+            full: LinkedList::new()
+        }
+    }
+
+    /// Allocates a (1 << order) sized chunk from this bin.
+    fn alloc(&mut self, page_alloc: &mut BuddyBlockAllocator) -> Result<*mut u8, AllocErr> {
+        // Get a slab. Use partially-filled first, if available.
+        let (s, was_empty) = match self.partial.pop() {
+            Some(s) => (s as *mut SlabInfo, false),
+            None => (match self.free.pop() {
+                Some(s) => s as *mut SlabInfo,
+                None => unsafe { self.add_slab(page_alloc)? }
+            }, true)
+        };
+
+        let slab = unsafe { &mut *s };
+        let ret = slab.alloc();
+
+        // Was the bitmap previously free?
+        let p = s as *mut u8;
+        if was_empty {
+            // Remove from free, move to partial.
+            unsafe {
+                self.free.remove(p);
+                self.partial.push(p);
+            }
+        } else if slab.is_full() { // Is it now full?
+            // Remove from partial, move to full.
+            unsafe {
+                self.partial.remove(p);
+                self.full.push(p);
+            }
+        }
+
+        ret
+    }
+
+    fn free(&mut self, ptr: *mut u8, page_alloc: &BuddyBlockAllocator) {
+        // Find the slab that this belongs to.
+        let slab_head = page_alloc.floor_alloc(ptr, SLAB_ORDER - PAGE_ORDER);
+        let slab_ptr = SlabInfo::from_head(slab_head);
+        let slab = unsafe { &mut *slab_ptr };
+
+        let idx = (ptr as usize - slab_head as usize) >> self.order;
+        let was_full = slab.is_full(); // Was it previously full?
+        slab.free(idx);
+
+        let p = slab_ptr as *mut u8;
+        if was_full {
+            // No longer full, move to partial.
+            unsafe {
+                self.full.remove(p);
+                self.partial.push(p);
+            }
+        } else if slab.is_empty() {
+            // No longer partial, move to free.
+            unsafe {
+                self.partial.remove(p);
+                self.free.push(p);
+            }
+        }
+    }
+
+    unsafe fn add_slab(&mut self, page_alloc: &mut BuddyBlockAllocator) -> Result<*mut SlabInfo, AllocErr> {
+        assert!(mem::size_of::<SlabInfo>() < SLAB_SZ);
+        let slab_head = page_alloc.alloc(SLAB_ORDER - PAGE_ORDER)? as *mut u8;
+        Ok(SlabInfo::init(slab_head, self.order))
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct SlabInfo {
+    prev: *mut SlabInfo,
+    next: *mut SlabInfo,
+    order: usize,
+    slab_head: *mut u8,
+    map: Bitmap
+}
+
+impl SlabInfo {
+    fn from_head(slab_head: *mut u8) -> *mut SlabInfo {
+        let addr = (slab_head as usize + SLAB_SZ) - mem::size_of::<SlabInfo>();
+        return addr as *mut SlabInfo;
+    }
+
+    fn is_full(&self) -> bool {
+        self.map.iter().all(|b| { b })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.map.iter().all(|b| { !b })
+    }
+
+    unsafe fn init(slab_head: *mut u8, order: usize) -> *mut SlabInfo {
+        // Calculate ending offset.
+        let addr = SlabInfo::from_head(slab_head);
+        let slab = &mut *addr;
+        slab.prev = ptr::null_mut();
+        slab.next = ptr::null_mut();
+        slab.order = order;
+        slab.slab_head = slab_head;
+
+        // Set up bitmap.
+        let len = SLAB_SZ >> order;
+        let data = (addr as usize - Bitmap::width(len)) as *mut u8;
+        slab.map = Bitmap::new(len, data);
+        slab.map.zero();
+
+        return addr;
+    }
+
+    fn alloc(&mut self) -> Result<*mut u8, AllocErr> {
+        // Find first free slot in the slab.
+        let mut idx = 0;
+        for (i, b) in self.map.iter().enumerate() {
+            if !b {
+                idx = i;
+                self.map.set_bit(idx);
+                break;
+            }
+        }
+
+        // Return address.
+        let addr = (self.slab_head as usize) + (1 << self.order) * idx;
+
+        Ok(addr as *mut u8)
+    }
+
+    fn free(&mut self, idx: usize) {
+        self.map.clear_bit(idx);
+    }
+}
 
 /// A simple allocator that allocates based on size classes.
 #[derive(Debug)]
 pub struct Allocator {
-    inner: BuddyBlockAllocator
+    inner: BuddyBlockAllocator,
+    bins: [AllocBin; SLAB_MAX_ORDER - SLAB_MIN_ORDER + 1]
 }
 
 impl Allocator {
@@ -296,8 +499,36 @@ impl Allocator {
     /// starting at address `start` and ending at address `end`.
     pub fn new(start: usize, end: usize) -> Allocator {
         Allocator {
-            inner: BuddyBlockAllocator::new(start, end)
+            inner: BuddyBlockAllocator::new(start, end),
+            bins: construct_array!(|idx| {
+                AllocBin::new(SLAB_MIN_ORDER + idx)
+            }, SLAB_MAX_ORDER - SLAB_MIN_ORDER + 1)
         }
+    }
+
+    /// Finds lowest order bin that can satisfy given size, and allocates
+    /// using this size.
+    fn alloc_bin(&mut self, sz: usize) -> Result<*mut u8, AllocErr> {
+        // Find the bin.
+        for b in self.bins.iter_mut() {
+            if (1 << b.order) >= sz {
+               return b.alloc(&mut self.inner);
+            }
+        }
+        Err(AllocErr)
+    }
+
+    /// Finds lowest order bin that can satisfy given size, and frees
+    /// using this size.
+    fn free_bin(&mut self, ptr: *mut u8, sz: usize) {
+        // Find the bin.
+        for b in self.bins.iter_mut() {
+            if (1 << b.order) >= sz {
+               b.free(ptr, &self.inner);
+               return;
+            }
+        }
+        panic!("invalid free request");
     }
 
     /// Allocates memory. Returns a pointer meeting the size and alignment
@@ -323,10 +554,16 @@ impl Allocator {
     pub fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
         assert!(layout.align() <= PAGE_SIZE);
 
-        let mut order = PAGE_ORDER;
-        while (1 << order) < layout.size() { order += 1; }
+        let alloc_sz = max(layout.size(), layout.align());
 
-        self.inner.alloc(order - PAGE_ORDER)
+        if alloc_sz > SLAB_MAX_SZ { // Just use the page allocator.
+            let mut order = PAGE_ORDER;
+            while (1 << order) < alloc_sz { order += 1; }
+
+            self.inner.alloc(order - PAGE_ORDER)
+        } else { // Using the slab allocator.
+            self.alloc_bin(alloc_sz)
+        }
     }
 
     /// Deallocates the memory referenced by `ptr`.
@@ -345,9 +582,15 @@ impl Allocator {
     pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         assert!(layout.align() <= PAGE_SIZE);
 
-        let mut order = PAGE_ORDER;
-        while (1 << order) < layout.size() { order += 1; }
+        let alloc_sz = max(layout.size(), layout.align());
 
-        self.inner.free(ptr, order - PAGE_ORDER);
+        if alloc_sz > SLAB_MAX_SZ { // Just use the page allocator.
+            let mut order = PAGE_ORDER;
+            while (1 << order) < alloc_sz { order += 1; }
+
+            self.inner.free(ptr, order - PAGE_ORDER);
+        } else { // Using the slab allocator.
+            self.free_bin(ptr, alloc_sz);
+        }
     }
 }
