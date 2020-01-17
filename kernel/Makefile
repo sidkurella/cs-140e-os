@@ -81,6 +81,9 @@ $(KERNEL).bin: $(KERNEL).elf | $(BUILD_DIR)
 	@echo "+ Building $@ [objcopy $<]"
 	@$(CROSS)-objcopy $< -O binary $@
 
+run: $(KERNEL).bin
+	qemu-system-aarch64 -s -M raspi3 -serial null -serial mon:stdio -kernel build/kernel.bin
+
 clean:
 	$(XARGO) clean
 	rm -rf $(BUILD_DIR)
