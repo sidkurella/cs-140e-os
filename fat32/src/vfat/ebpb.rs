@@ -10,10 +10,10 @@ const EBPB_SIGS : [u8; 2] = [0x28, 0x29];
 pub struct BiosParameterBlock {
     _jmp: [u8; 3],
     oem: [u8; 8],
-    bytes_per_sector: u16,
-    sectors_per_cluster: u8,
-    reserved_sectors: u16,
-    fats: u8,
+    pub bytes_per_sector: u16,
+    pub sectors_per_cluster: u8,
+    pub reserved_sectors: u16,
+    pub fats: u8,
     _max_dir_entries: u16, // 0 for FAT32
     _logical_sectors: u16,
     media_descriptor_type: u8,
@@ -21,13 +21,13 @@ pub struct BiosParameterBlock {
     sectors_per_track: u16,
     heads: u16,
     num_hidden_sectors: u32,
-    logical_sectors: u32, // Used if greater than 65535.
+    pub logical_sectors: u32, // Used if greater than 65535.
 
     // Extended
-    sectors_per_fat: u32,
+    pub sectors_per_fat: u32,
     flags: u16,
     version_number: u16,
-    root_dir_cluster: u32,
+    pub root_dir_cluster: u32,
     fsinfo_sector: u16,
     backup_boot_sector: u16,
     _reserved: [u8; 12],

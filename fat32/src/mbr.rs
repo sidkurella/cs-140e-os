@@ -34,9 +34,9 @@ impl<'a> From<&'a InnerCHS> for CHS {
 pub struct PartitionEntry {
     indicator: u8,
     _chs_start: InnerCHS,
-    kind: u8,
+    pub kind: u8,
     _chs_end: InnerCHS,
-    lba_start: u32,
+    pub lba_start: u32,
     lba_sectors: u32
 }
 
@@ -50,7 +50,7 @@ impl PartitionEntry {
 #[repr(C, packed)]
 pub struct MasterBootRecord {
     _boot: [u8; 446],
-    partitions: [PartitionEntry; 4],
+    pub partitions: [PartitionEntry; 4],
     signature: u16
 }
 
