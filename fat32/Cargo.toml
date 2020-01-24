@@ -5,5 +5,8 @@ authors = ["Sergio Benitez <sb@sergio.bz>"]
 
 [dependencies]
 
+[target.'cfg(target_os = "ros")'.dependencies]
+std = { path = "../../os/std" }
+
 [dev-dependencies]
 rand = "0.4"
