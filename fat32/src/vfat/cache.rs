@@ -1,4 +1,4 @@
-use std::{io, fmt};
+use std::{io, fmt, cmp};
 use std::collections::HashMap;
 
 use traits::BlockDevice;
@@ -70,6 +70,26 @@ impl CachedDevice {
         }
     }
 
+    fn load_to_cache(&mut self, sector: u64) -> io::Result<()> {
+        let (phys, len) = self.virtual_to_physical(sector);
+        let sector_sz : usize = self.device.sector_size() as usize;
+        let mut c = CacheEntry {
+            data: vec![0; (len as usize * sector_sz)],
+            dirty: false
+        };
+
+        for (i, chunk) in c.data.chunks_mut(sector_sz).enumerate() {
+            let x = self.device.read_sector(phys + i as u64, chunk)?;
+            if x != sector_sz {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "failed to read whole sector")
+                )
+            }
+        }
+        Ok(())
+    }
+
     /// Returns a mutable reference to the cached sector `sector`. If the sector
     /// is not already cached, the sector is first read from the disk.
     ///
@@ -81,7 +101,13 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get_mut(&mut self, sector: u64) -> io::Result<&mut [u8]> {
-        unimplemented!("CachedDevice::get_mut()")
+        if self.cache.contains_key(&sector) {
+            self.load_to_cache(sector)?;
+        }
+
+        let c = self.cache.get_mut(&sector).unwrap();
+        c.dirty = true;
+        Ok(&mut c.data)
     }
 
     /// Returns a reference to the cached sector `sector`. If the sector is not
@@ -91,12 +117,36 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get(&mut self, sector: u64) -> io::Result<&[u8]> {
-        unimplemented!("CachedDevice::get()")
+        if self.cache.contains_key(&sector) {
+            self.load_to_cache(sector)?;
+        }
+
+        let c = self.cache.get(&sector).unwrap();
+        Ok(&c.data)
     }
 }
 
-// FIXME: Implement `BlockDevice` for `CacheDevice`. The `read_sector` and
-// `write_sector` methods should only read/write from/to cached sectors.
+impl BlockDevice for CachedDevice {
+    fn sector_size(&self) -> u64 {
+        self.partition.sector_size
+    }
+
+    fn read_sector(&mut self, n: u64, buf: &mut [u8]) -> io::Result<usize> {
+        let data = self.get(n)?;
+        let sz = cmp::min(buf.len(), data.len());
+        buf[..sz].copy_from_slice(&data[..sz]);
+
+        Ok(sz)
+    }
+
+    fn write_sector(&mut self, n: u64, buf: &[u8]) -> io::Result<usize> {
+        let data = self.get_mut(n)?;
+        let sz = cmp::min(buf.len(), data.len());
+        data[..sz].copy_from_slice(&buf[..sz]);
+
+        Ok(sz)
+    }
+}
 
 impl fmt::Debug for CachedDevice {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
