@@ -47,7 +47,7 @@ struct Registers {
     PUDCLK: [Volatile<u32>; 2],
 }
 
-/// Possible states for a GPIO pin.
+// Possible states for a GPIO pin.
 states! {
     Uninitialized, Input, Output, Alt
 }

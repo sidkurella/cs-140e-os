@@ -1,30 +1,30 @@
-use crate::common::IO_BASE;
+// use crate::common::IO_BASE;
 
-use volatile::prelude::*;
-use volatile::{Volatile, ReadVolatile};
+// use volatile::prelude::*;
+// use volatile::{Volatile, ReadVolatile};
 
-/// The base address for the ARM system timer registers.
-const TIMER_REG_BASE: usize = IO_BASE + 0x3000;
+// /// The base address for the ARM system timer registers.
+// const TIMER_REG_BASE: usize = IO_BASE + 0x3000;
 
-#[repr(C)]
-#[allow(non_snake_case)]
-struct Registers {
-    CS: Volatile<u32>,
-    CLO: ReadVolatile<u32>,
-    CHI: ReadVolatile<u32>,
-    COMPARE: [Volatile<u32>; 4]
-}
+// #[repr(C)]
+// #[allow(non_snake_case)]
+// struct Registers {
+//     CS: Volatile<u32>,
+//     CLO: ReadVolatile<u32>,
+//     CHI: ReadVolatile<u32>,
+//     COMPARE: [Volatile<u32>; 4]
+// }
 
 /// The Raspberry Pi ARM system timer.
 pub struct Timer {
-    registers: &'static mut Registers
+    // registers: &'static mut Registers
 }
 
 impl Timer {
     /// Returns a new instance of `Timer`.
     pub fn new() -> Timer {
         Timer {
-            registers: unsafe { &mut *(TIMER_REG_BASE as *mut Registers) },
+            // registers: unsafe { &mut *(TIMER_REG_BASE as *mut Registers) },
         }
     }
 

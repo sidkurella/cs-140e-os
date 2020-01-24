@@ -1,4 +1,3 @@
-use std::fmt;
 use std::mem;
 use std::mem::ManuallyDrop;
 use std::ptr;
@@ -17,7 +16,7 @@ const PAGE_SIZE : usize = 1 << PAGE_ORDER;
 const MAX_BLOCK_ORDER : usize = 10;
 
 const SLAB_MIN_ORDER : usize = 3;
-const SLAB_MIN_SZ : usize = 1 << SLAB_MIN_ORDER;
+// const SLAB_MIN_SZ : usize = 1 << SLAB_MIN_ORDER;
 
 const SLAB_MAX_ORDER : usize = PAGE_ORDER - 1;
 const SLAB_MAX_SZ : usize = 1 << SLAB_MAX_ORDER;
@@ -29,7 +28,7 @@ const SLAB_SZ : usize = PAGE_SIZE; // Should probably be increased later.
 macro_rules! construct_array {
     ($e: expr, $n:expr) => (
         {
-            use std::mem;
+            use std::mem::MaybeUninit;
             use std::ptr;
 
             struct ArrayBuilder<T> {
@@ -66,14 +65,14 @@ macro_rules! construct_array {
             }
 
             let mut v: ManuallyDrop<[_; $n]> = ManuallyDrop::new(unsafe {
-                mem::uninitialized()
+                MaybeUninit::uninit().assume_init()
             });
 
             if false { v[0] = $e(0); }
 
             let mut builder = ArrayBuilder::new(&mut v);
             for i in 0..$n {
-                let mut val = $e(i);
+                let val = $e(i);
                 unsafe { builder.write(val); }
             }
 

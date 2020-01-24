@@ -5,7 +5,7 @@
 #![feature(optin_builtin_traits)]
 #![feature(decl_macro)]
 #![feature(exclusive_range_pattern)]
-#![feature(alloc, allocator_api)]
+#![feature(allocator_api)]
 #![feature(raw_vec_internals)]
 
 
@@ -33,8 +33,8 @@ pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 
 pub static FILE_SYSTEM: FileSystem = FileSystem::uninitialized();
 
-use console::{kprint, kprintln, CONSOLE};
-use pi::atags;
+// use console::{kprint, kprintln, CONSOLE};
+use console::kprintln;
 
 #[no_mangle]
 #[cfg(not(test))]
@@ -83,5 +83,5 @@ pub extern "C" fn kmain() {
 
     kprintln!("Drop OK");
 
-    loop { unsafe { asm!("wfe" ::: "volatile"); } }
+    loop { unsafe { asm!("wfe" :::: "volatile"); } }
 }
