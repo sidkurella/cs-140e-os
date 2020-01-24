@@ -2,9 +2,10 @@
 name = "pi"
 version = "0.1.0"
 authors = ["Sergio Benitez <sb@sergio.bz>"]
+edition = "2018"
 
 [dependencies]
 volatile = { path = "../volatile" }
 
-[features]
-std = []
+[target.'cfg(target_os = "ros")'.dependencies]
+std = { path = "../../os/std" }

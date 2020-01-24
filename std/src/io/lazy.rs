@@ -1,8 +1,8 @@
-use cell::Cell;
-use ptr;
-use sync::Arc;
-use sys_common;
-use sys_common::mutex::Mutex;
+use crate::cell::Cell;
+use crate::ptr;
+use crate::sync::Arc;
+use crate::sys_common;
+use crate::sys_common::mutex::Mutex;
 
 pub struct Lazy<T> {
     // We never call `lock.init()`, so it is UB to attempt to acquire this mutex reentrantly!
@@ -11,16 +11,15 @@ pub struct Lazy<T> {
 }
 
 #[inline]
-const fn done<T>() -> *mut Arc<T> { 1_usize as *mut _ }
+const fn done<T>() -> *mut Arc<T> {
+    1_usize as *mut _
+}
 
 unsafe impl<T> Sync for Lazy<T> {}
 
 impl<T> Lazy<T> {
     pub const fn new() -> Lazy<T> {
-        Lazy {
-            lock: Mutex::new(),
-            ptr: Cell::new(ptr::null_mut()),
-        }
+        Lazy { lock: Mutex::new(), ptr: Cell::new(ptr::null_mut()) }
     }
 }
 

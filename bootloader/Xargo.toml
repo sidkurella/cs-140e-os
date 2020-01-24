@@ -1,8 +1,8 @@
 [dependencies]
 core = {}
-# std_unicode = {}
 
 [dependencies.compiler_builtins]
+version = "0.1.2"
 features = ["mem"]
 stage = 1
 

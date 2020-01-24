@@ -1,4 +1,4 @@
-//! Platform-dependent platform abstraction
+//! Platform-dependent platform abstraction.
 //!
 //! The `std::sys` module is the abstracted interface through which
 //! `std` talks to the underlying operating system. It has different
@@ -25,8 +25,11 @@
 mod ros;
 pub use self::ros::*;
 
-// cfg_if! {
-//     if #[cfg(unix)] {
+// cfg_if::cfg_if! {
+//     if #[cfg(target_os = "vxworks")] {
+//         mod vxworks;
+//         pub use self::vxworks::*;
+//     } else if #[cfg(unix)] {
 //         mod unix;
 //         pub use self::unix::*;
 //     } else if #[cfg(windows)] {
@@ -35,9 +38,12 @@ pub use self::ros::*;
 //     } else if #[cfg(target_os = "cloudabi")] {
 //         mod cloudabi;
 //         pub use self::cloudabi::*;
-//     } else if #[cfg(target_os = "redox")] {
-//         mod redox;
-//         pub use self::redox::*;
+//     } else if #[cfg(target_os = "hermit")] {
+//         mod hermit;
+//         pub use self::hermit::*;
+//     } else if #[cfg(target_os = "wasi")] {
+//         mod wasi;
+//         pub use self::wasi::*;
 //     } else if #[cfg(target_arch = "wasm32")] {
 //         mod wasm;
 //         pub use self::wasm::*;
@@ -48,45 +54,48 @@ pub use self::ros::*;
 //         compile_error!("libstd doesn't compile for this platform yet");
 //     }
 // }
-
-// Import essential modules from both platforms when documenting. These are
-// then later used in the `std::os` module when documenting, for example,
-// Windows when we're compiling for Linux.
-
-// #[cfg(rustdoc)]
-// cfg_if! {
-//     if #[cfg(any(unix, target_os = "redox"))] {
+// 
+// // Import essential modules from both platforms when documenting. These are
+// // then later used in the `std::os` module when documenting, for example,
+// // Windows when we're compiling for Linux.
+// 
+// #[cfg(doc)]
+// cfg_if::cfg_if! {
+//     if #[cfg(unix)] {
 //         // On unix we'll document what's already available
+//         #[stable(feature = "rust1", since = "1.0.0")]
 //         pub use self::ext as unix_ext;
 //     } else if #[cfg(any(target_os = "cloudabi",
+//                         target_os = "hermit",
 //                         target_arch = "wasm32",
 //                         all(target_vendor = "fortanix", target_env = "sgx")))] {
 //         // On CloudABI and wasm right now the module below doesn't compile
 //         // (missing things in `libc` which is empty) so just omit everything
 //         // with an empty module
-//         #[unstable(issue = "0", feature = "std_internals")]
+//         #[unstable(issue = "none", feature = "std_internals")]
 //         #[allow(missing_docs)]
 //         pub mod unix_ext {}
 //     } else {
 //         // On other platforms like Windows document the bare bones of unix
-//         use os::linux as platform;
+//         use crate::os::linux as platform;
 //         #[path = "unix/ext/mod.rs"]
 //         pub mod unix_ext;
 //     }
 // }
-//
-// #[cfg(rustdoc)]
-// cfg_if! {
+// 
+// #[cfg(doc)]
+// cfg_if::cfg_if! {
 //     if #[cfg(windows)] {
 //         // On windows we'll just be documenting what's already available
 //         #[allow(missing_docs)]
+//         #[stable(feature = "rust1", since = "1.0.0")]
 //         pub use self::ext as windows_ext;
 //     } else if #[cfg(any(target_os = "cloudabi",
 //                         target_arch = "wasm32",
 //                         all(target_vendor = "fortanix", target_env = "sgx")))] {
 //         // On CloudABI and wasm right now the shim below doesn't compile, so
 //         // just omit it
-//         #[unstable(issue = "0", feature = "std_internals")]
+//         #[unstable(issue = "none", feature = "std_internals")]
 //         #[allow(missing_docs)]
 //         pub mod windows_ext {}
 //     } else {
@@ -95,10 +104,10 @@ pub use self::ros::*;
 //         #[macro_use]
 //         #[path = "windows/compat.rs"]
 //         mod compat;
-//
+// 
 //         #[path = "windows/c.rs"]
 //         mod c;
-//
+// 
 //         #[path = "windows/ext/mod.rs"]
 //         pub mod windows_ext;
 //     }

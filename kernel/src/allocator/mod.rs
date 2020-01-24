@@ -7,9 +7,10 @@ mod imp;
 #[cfg(test)]
 mod tests;
 
-use mutex::Mutex;
 use alloc::alloc::{GlobalAlloc, AllocErr, Layout};
 use std::cmp::max;
+
+use crate::mutex::Mutex;
 
 use pi::atags;
 

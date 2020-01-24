@@ -22,7 +22,7 @@
 /// ```
 #[inline]
 pub fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    // ::sys::memchr::memchr(needle, haystack)
+    // crate::sys::memchr::memchr(needle, haystack)
     haystack.iter().position(|&b| b == needle)
 }
 
@@ -43,7 +43,7 @@ pub fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
 /// ```
 #[inline]
 pub fn memrchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    // ::sys::memchr::memrchr(needle, haystack)
+    // crate::sys::memchr::memrchr(needle, haystack)
     haystack.iter().rev().position(|&b| b == needle)
 }
 

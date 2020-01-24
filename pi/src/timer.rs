@@ -1,4 +1,5 @@
-use common::IO_BASE;
+use crate::common::IO_BASE;
+
 use volatile::prelude::*;
 use volatile::{Volatile, ReadVolatile};
 

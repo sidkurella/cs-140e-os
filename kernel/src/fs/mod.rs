@@ -6,7 +6,7 @@ use std::path::Path;
 use fat32::vfat::{self, Shared, VFat};
 pub use fat32::traits;
 
-use mutex::Mutex;
+use crate::mutex::Mutex;
 use self::sd::Sd;
 
 pub struct FileSystem(Mutex<Option<Shared<VFat>>>);

@@ -1,5 +1,5 @@
 mod align_util {
-    use allocator::util::{align_up, align_down};
+    use crate::allocator::util::{align_up, align_down};
 
     #[test]
     fn test_align_down() {
@@ -246,7 +246,7 @@ mod allocator {
 }
 
 mod linked_list {
-    use allocator::linked_list::LinkedList;
+    use crate::allocator::linked_list::LinkedList;
 
     struct Slot(usize, usize);
 

@@ -15,54 +15,71 @@
 #![allow(missing_docs)]
 #![allow(missing_debug_implementations)]
 
-// use sync::Once;
-// use sys;
+// use crate::sync::Once;
+// use crate::sys;
 
 // macro_rules! rtabort {
-//     ($($t:tt)*) => (::sys_common::util::abort(format_args!($($t)*)))
+//     ($($t:tt)*) => (crate::sys_common::util::abort(format_args!($($t)*)))
 // }
 
 // macro_rules! rtassert {
-//     ($e:expr) => (if !$e {
-//         rtabort!(concat!("assertion failed: ", stringify!($e)));
-//     })
+//     ($e:expr) => {
+//         if !$e {
+//             rtabort!(concat!("assertion failed: ", stringify!($e)));
+//         }
+//     };
+// }
+
+// #[allow(unused_macros)] // not used on all platforms
+// macro_rules! rtunwrap {
+//     ($ok:ident, $e:expr) => {
+//         match $e {
+//             $ok(v) => v,
+//             ref err => {
+//                 let err = err.as_ref().map(drop); // map Ok/Some which might not be Debug
+//                 rtabort!(concat!("unwrap failed: ", stringify!($e), " = {:?}"), err)
+//             }
+//         }
+//     };
 // }
 
 // pub mod alloc;
 // pub mod at_exit_imp;
-// #[cfg(feature = "backtrace")]
 // pub mod backtrace;
+pub mod bytestring;
 // pub mod condvar;
-// pub mod io;
+// pub mod fs;
+pub mod io;
 // pub mod mutex;
+// #[cfg(any(doc, // see `mod os`, docs are generated for multiple platforms
+//           unix,
+//           target_os = "redox",
+//           target_os = "cloudabi",
+//           target_os = "hermit",
+//           target_arch = "wasm32",
+//           all(target_vendor = "fortanix", target_env = "sgx")))]
+// pub mod os_str_bytes;
 // pub mod poison;
+// pub mod process;
 // pub mod remutex;
 // pub mod rwlock;
 // pub mod thread;
 // pub mod thread_info;
 // pub mod thread_local;
-// pub mod util;
+pub mod util;
 // pub mod wtf8;
-pub mod bytestring;
-// pub mod process;
 
-// cfg_if! {
+// cfg_if::cfg_if! {
 //     if #[cfg(any(target_os = "cloudabi",
 //                  target_os = "l4re",
-//                  target_os = "redox",
+//                  target_os = "hermit",
 //                  all(target_arch = "wasm32", not(target_os = "emscripten")),
 //                  all(target_vendor = "fortanix", target_env = "sgx")))] {
-//         pub use sys::net;
+//         pub use crate::sys::net;
 //     } else {
 //         pub mod net;
 //     }
 // }
-
-// #[cfg(feature = "backtrace")]
-// #[cfg(any(all(unix, not(target_os = "emscripten")),
-//           all(windows, target_env = "gnu"),
-//           target_os = "redox"))]
-// pub mod gnu;
 
 // common error constructors
 
@@ -101,9 +118,9 @@ pub trait FromInner<Inner> {
 // /// that the closure could not be registered, meaning that it is not scheduled
 // /// to be run.
 // pub fn at_exit<F: FnOnce() + Send + 'static>(f: F) -> Result<(), ()> {
-//     if at_exit_imp::push(Box::new(f)) {Ok(())} else {Err(())}
+//     if at_exit_imp::push(Box::new(f)) { Ok(()) } else { Err(()) }
 // }
-//
+
 // /// One-time runtime cleanup.
 // pub fn cleanup() {
 //     static CLEANUP: Once = Once::new();
@@ -129,6 +146,5 @@ pub fn mul_div_u64(value: u64, numer: u64, denom: u64) -> u64 {
 
 #[test]
 fn test_muldiv() {
-    assert_eq!(mul_div_u64( 1_000_000_000_001, 1_000_000_000, 1_000_000),
-               1_000_000_000_001_000);
+    assert_eq!(mul_div_u64(1_000_000_000_001, 1_000_000_000, 1_000_000), 1_000_000_000_001_000);
 }

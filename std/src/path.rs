@@ -1,6 +1,8 @@
+// ignore-tidy-filelength
+
 //! Cross-platform path manipulation.
 //!
-//! This module provides two types, [`PathBuf`] and [`Path`][`Path`] (akin to [`String`]
+//! This module provides two types, [`PathBuf`] and [`Path`] (akin to [`String`]
 //! and [`str`]), for working with paths abstractly. These types are thin wrappers
 //! around [`OsString`] and [`OsStr`] respectively, meaning that they work directly
 //! on strings according to the local platform's path syntax.
@@ -67,23 +69,22 @@
 
 #![stable(feature = "rust1", since = "1.0.0")]
 
-use borrow::{Borrow, Cow};
-use cmp;
-use error::Error;
-use fmt;
-// use fs;
-use hash::{Hash, Hasher};
-// use io;
-use iter::{self, FusedIterator};
-use ops::{self, Deref};
-use rc::Rc;
-use str::FromStr;
-use string::ParseError;
-use sync::Arc;
+use crate::borrow::{Borrow, Cow};
+use crate::cmp;
+use crate::error::Error;
+use crate::fmt;
+// use crate::fs;
+use crate::hash::{Hash, Hasher};
+// use crate::io;
+use crate::iter::{self, FusedIterator};
+use crate::ops::{self, Deref};
+use crate::rc::Rc;
+use crate::str::FromStr;
+use crate::sync::Arc;
 
-use ffi::{OsStr, OsString};
+use crate::ffi::{OsStr, OsString};
 
-use sys::path::{is_sep_byte, is_verbatim_sep, MAIN_SEP_STR, parse_prefix};
+use crate::sys::path::{is_sep_byte, is_verbatim_sep, parse_prefix, MAIN_SEP_STR};
 
 ////////////////////////////////////////////////////////////////////////////////
 // GENERAL NOTES
@@ -195,26 +196,13 @@ impl<'a> Prefix<'a> {
         match *self {
             Verbatim(x) => 4 + os_str_len(x),
             VerbatimUNC(x, y) => {
-                8 + os_str_len(x) +
-                if os_str_len(y) > 0 {
-                    1 + os_str_len(y)
-                } else {
-                    0
-                }
-            },
+                8 + os_str_len(x) + if os_str_len(y) > 0 { 1 + os_str_len(y) } else { 0 }
+            }
             VerbatimDisk(_) => 6,
-            UNC(x, y) => {
-                2 + os_str_len(x) +
-                if os_str_len(y) > 0 {
-                    1 + os_str_len(y)
-                } else {
-                    0
-                }
-            },
+            UNC(x, y) => 2 + os_str_len(x) + if os_str_len(y) > 0 { 1 + os_str_len(y) } else { 0 },
             DeviceNS(x) => 4 + os_str_len(x),
             Disk(_) => 2,
         }
-
     }
 
     /// Determines if the prefix is verbatim, i.e., begins with `\\?\`.
@@ -236,18 +224,12 @@ impl<'a> Prefix<'a> {
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn is_verbatim(&self) -> bool {
         use self::Prefix::*;
-        match *self {
-            Verbatim(_) | VerbatimDisk(_) | VerbatimUNC(..) => true,
-            _ => false,
-        }
+        matches!(*self, Verbatim(_) | VerbatimDisk(_) | VerbatimUNC(..))
     }
 
     #[inline]
     fn is_drive(&self) -> bool {
-        match *self {
-            Prefix::Disk(_) => true,
-            _ => false,
-        }
+        matches!(*self, Prefix::Disk(_))
     }
 
     #[inline]
@@ -280,7 +262,7 @@ pub fn is_separator(c: char) -> bool {
 ///
 /// For example, `/` on Unix and `\` on Windows.
 #[stable(feature = "rust1", since = "1.0.0")]
-pub const MAIN_SEPARATOR: char = ::sys::path::MAIN_SEP;
+pub const MAIN_SEPARATOR: char = crate::sys::path::MAIN_SEP;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Misc helpers
@@ -290,8 +272,9 @@ pub const MAIN_SEPARATOR: char = ::sys::path::MAIN_SEP;
 // is not a prefix of `iter`, otherwise return `Some(iter_after_prefix)` giving
 // `iter` after having exhausted `prefix`.
 fn iter_after<'a, 'b, I, J>(mut iter: I, mut prefix: J) -> Option<I>
-    where I: Iterator<Item = Component<'a>> + Clone,
-          J: Iterator<Item = Component<'b>>,
+where
+    I: Iterator<Item = Component<'a>> + Clone,
+    J: Iterator<Item = Component<'b>>,
 {
     loop {
         let mut iter_next = iter.clone();
@@ -307,6 +290,13 @@ fn iter_after<'a, 'b, I, J>(mut iter: I, mut prefix: J) -> Option<I>
 }
 
 // See note at the top of this module to understand why these are used:
+//
+// These casts are safe as OsStr is internally a wrapper around [u8] on all
+// platforms.
+//
+// Note that currently this relies on the special knowledge that libstd has;
+// these types are single-element structs but are not marked repr(transparent)
+// or repr(C) which would make these casts allowable outside std.
 fn os_str_as_u8_slice(s: &OsStr) -> &[u8] {
     unsafe { &*(s as *const OsStr as *const [u8]) }
 }
@@ -316,7 +306,7 @@ unsafe fn u8_slice_as_os_str(s: &[u8]) -> &OsStr {
 
 // Detect scheme on Redox
 fn has_redox_scheme(s: &[u8]) -> bool {
-    cfg!(target_os = "redox") && s.split(|b| *b == b'/').next().unwrap_or(b"").contains(&b':')
+    cfg!(target_os = "redox") && s.contains(&b':')
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -324,12 +314,8 @@ fn has_redox_scheme(s: &[u8]) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Says whether the first byte after the prefix is a separator.
-fn has_physical_root(s: &[u8], prefix: Option<Prefix>) -> bool {
-    let path = if let Some(p) = prefix {
-        &s[p.len()..]
-    } else {
-        s
-    };
+fn has_physical_root(s: &[u8], prefix: Option<Prefix<'_>>) -> bool {
+    let path = if let Some(p) = prefix { &s[p.len()..] } else { s };
     !path.is_empty() && is_sep_byte(path[0])
 }
 
@@ -351,8 +337,7 @@ fn split_file_at_dot(file: &OsStr) -> (Option<&OsStr>, Option<&OsStr>) {
         if before == Some(b"") {
             (Some(file), None)
         } else {
-            (before.map(|s| u8_slice_as_os_str(s)),
-             after.map(|s| u8_slice_as_os_str(s)))
+            (before.map(|s| u8_slice_as_os_str(s)), after.map(|s| u8_slice_as_os_str(s)))
         }
     }
 }
@@ -369,9 +354,9 @@ fn split_file_at_dot(file: &OsStr) -> (Option<&OsStr>, Option<&OsStr>) {
 /// directory component, and a body (of normal components)
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
 enum State {
-    Prefix = 0,         // c:
-    StartDir = 1,       // / or . or nothing
-    Body = 2,           // foo/bar/baz
+    Prefix = 0,   // c:
+    StartDir = 1, // / or . or nothing
+    Body = 2,     // foo/bar/baz
     Done = 3,
 }
 
@@ -457,14 +442,14 @@ impl<'a> cmp::PartialOrd for PrefixComponent<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> cmp::Ord for PrefixComponent<'a> {
-    fn cmp(&self, other: &PrefixComponent<'a>) -> cmp::Ordering {
+impl cmp::Ord for PrefixComponent<'_> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         cmp::Ord::cmp(&self.parsed, &other.parsed)
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> Hash for PrefixComponent<'a> {
+impl Hash for PrefixComponent<'_> {
     fn hash<H: Hasher>(&self, h: &mut H) {
         self.parsed.hash(h);
     }
@@ -508,9 +493,7 @@ pub enum Component<'a> {
     ///
     /// [`Prefix`]: enum.Prefix.html
     #[stable(feature = "rust1", since = "1.0.0")]
-    Prefix(
-        #[stable(feature = "rust1", since = "1.0.0")] PrefixComponent<'a>
-    ),
+    Prefix(#[stable(feature = "rust1", since = "1.0.0")] PrefixComponent<'a>),
 
     /// The root directory component, appears after any prefix and before anything else.
     ///
@@ -561,14 +544,14 @@ impl<'a> Component<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> AsRef<OsStr> for Component<'a> {
+impl AsRef<OsStr> for Component<'_> {
     fn as_ref(&self) -> &OsStr {
         self.as_os_str()
     }
 }
 
 #[stable(feature = "path_component_asref", since = "1.25.0")]
-impl<'a> AsRef<Path> for Component<'a> {
+impl AsRef<Path> for Component<'_> {
     fn as_ref(&self) -> &Path {
         self.as_os_str().as_ref()
     }
@@ -630,21 +613,17 @@ pub struct Iter<'a> {
 }
 
 #[stable(feature = "path_components_debug", since = "1.13.0")]
-impl<'a> fmt::Debug for Components<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Debug for Components<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct DebugHelper<'a>(&'a Path);
 
-        impl<'a> fmt::Debug for DebugHelper<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_list()
-                    .entries(self.0.components())
-                    .finish()
+        impl fmt::Debug for DebugHelper<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_list().entries(self.0.components()).finish()
             }
         }
 
-        f.debug_tuple("Components")
-            .field(&DebugHelper(self.as_path()))
-            .finish()
+        f.debug_tuple("Components").field(&DebugHelper(self.as_path())).finish()
     }
 }
 
@@ -663,26 +642,14 @@ impl<'a> Components<'a> {
     /// how much of the prefix is left from the point of view of iteration?
     #[inline]
     fn prefix_remaining(&self) -> usize {
-        if self.front == State::Prefix {
-            self.prefix_len()
-        } else {
-            0
-        }
+        if self.front == State::Prefix { self.prefix_len() } else { 0 }
     }
 
     // Given the iteration so far, how much of the pre-State::Body path is left?
     #[inline]
     fn len_before_body(&self) -> usize {
-        let root = if self.front <= State::StartDir && self.has_physical_root {
-            1
-        } else {
-            0
-        };
-        let cur_dir = if self.front <= State::StartDir && self.include_cur_dir() {
-            1
-        } else {
-            0
-        };
+        let root = if self.front <= State::StartDir && self.has_physical_root { 1 } else { 0 };
+        let cur_dir = if self.front <= State::StartDir && self.include_cur_dir() { 1 } else { 0 };
         self.prefix_remaining() + root + cur_dir
     }
 
@@ -694,11 +661,7 @@ impl<'a> Components<'a> {
 
     #[inline]
     fn is_sep_byte(&self, b: u8) -> bool {
-        if self.prefix_verbatim() {
-            is_verbatim_sep(b)
-        } else {
-            is_sep_byte(b)
-        }
+        if self.prefix_verbatim() { is_verbatim_sep(b) } else { is_sep_byte(b) }
     }
 
     /// Extracts a slice corresponding to the portion of the path remaining for iteration.
@@ -757,8 +720,8 @@ impl<'a> Components<'a> {
         match comp {
             b"." if self.prefix_verbatim() => Some(Component::CurDir),
             b"." => None, // . components are normalized away, except at
-                          // the beginning of a path, which is treated
-                          // separately via `include_cur_dir`
+            // the beginning of a path, which is treated
+            // separately via `include_cur_dir`
             b".." => Some(Component::ParentDir),
             b"" => None,
             _ => Some(Component::Normal(unsafe { u8_slice_as_os_str(comp) })),
@@ -814,35 +777,31 @@ impl<'a> Components<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> AsRef<Path> for Components<'a> {
+impl AsRef<Path> for Components<'_> {
     fn as_ref(&self) -> &Path {
         self.as_path()
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> AsRef<OsStr> for Components<'a> {
+impl AsRef<OsStr> for Components<'_> {
     fn as_ref(&self) -> &OsStr {
         self.as_path().as_os_str()
     }
 }
 
 #[stable(feature = "path_iter_debug", since = "1.13.0")]
-impl<'a> fmt::Debug for Iter<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Debug for Iter<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct DebugHelper<'a>(&'a Path);
 
-        impl<'a> fmt::Debug for DebugHelper<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_list()
-                    .entries(self.0.iter())
-                    .finish()
+        impl fmt::Debug for DebugHelper<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_list().entries(self.0.iter()).finish()
             }
         }
 
-        f.debug_tuple("Iter")
-            .field(&DebugHelper(self.as_path()))
-            .finish()
+        f.debug_tuple("Iter").field(&DebugHelper(self.as_path())).finish()
     }
 }
 
@@ -867,14 +826,14 @@ impl<'a> Iter<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> AsRef<Path> for Iter<'a> {
+impl AsRef<Path> for Iter<'_> {
     fn as_ref(&self) -> &Path {
         self.as_path()
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> AsRef<OsStr> for Iter<'a> {
+impl AsRef<OsStr> for Iter<'_> {
     fn as_ref(&self) -> &OsStr {
         self.as_path().as_os_str()
     }
@@ -897,7 +856,7 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
 }
 
 #[stable(feature = "fused", since = "1.26.0")]
-impl<'a> FusedIterator for Iter<'a> {}
+impl FusedIterator for Iter<'_> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> Iterator for Components<'a> {
@@ -1000,7 +959,7 @@ impl<'a> DoubleEndedIterator for Components<'a> {
 }
 
 #[stable(feature = "fused", since = "1.26.0")]
-impl<'a> FusedIterator for Components<'a> {}
+impl FusedIterator for Components<'_> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> cmp::PartialEq for Components<'a> {
@@ -1010,7 +969,7 @@ impl<'a> cmp::PartialEq for Components<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> cmp::Eq for Components<'a> {}
+impl cmp::Eq for Components<'_> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> cmp::PartialOrd for Components<'a> {
@@ -1020,8 +979,8 @@ impl<'a> cmp::PartialOrd for Components<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> cmp::Ord for Components<'a> {
-    fn cmp(&self, other: &Components<'a>) -> cmp::Ordering {
+impl cmp::Ord for Components<'_> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         Iterator::cmp(self.clone(), other.clone())
     }
 }
@@ -1063,7 +1022,7 @@ impl<'a> Iterator for Ancestors<'a> {
 }
 
 #[stable(feature = "path_ancestors", since = "1.28.0")]
-impl<'a> FusedIterator for Ancestors<'a> {}
+impl FusedIterator for Ancestors<'_> {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basic types and traits
@@ -1122,6 +1081,12 @@ impl<'a> FusedIterator for Ancestors<'a> {}
 /// Which method works best depends on what kind of situation you're in.
 #[derive(Clone)]
 #[stable(feature = "rust1", since = "1.0.0")]
+// FIXME:
+// `PathBuf::as_mut_vec` current implementation relies
+// on `PathBuf` being layout-compatible with `Vec<u8>`.
+// When attribute privacy is implemented, `PathBuf` should be annotated as `#[repr(transparent)]`.
+// Anyway, `PathBuf` representation and layout are considered implementation detail, are
+// not documented and must not be relied upon.
 pub struct PathBuf {
     inner: OsString,
 }
@@ -1143,6 +1108,31 @@ impl PathBuf {
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn new() -> PathBuf {
         PathBuf { inner: OsString::new() }
+    }
+
+    /// Creates a new `PathBuf` with a given capacity used to create the
+    /// internal [`OsString`]. See [`with_capacity`] defined on [`OsString`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #![feature(path_buf_capacity)]
+    /// use std::path::PathBuf;
+    ///
+    /// let mut path = PathBuf::with_capacity(10);
+    /// let capacity = path.capacity();
+    ///
+    /// // This push is done without reallocating
+    /// path.push(r"C:\");
+    ///
+    /// assert_eq!(capacity, path.capacity());
+    /// ```
+    ///
+    /// [`with_capacity`]: ../ffi/struct.OsString.html#method.with_capacity
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn with_capacity(capacity: usize) -> PathBuf {
+        PathBuf { inner: OsString::with_capacity(capacity) }
     }
 
     /// Coerces to a [`Path`] slice.
@@ -1205,8 +1195,10 @@ impl PathBuf {
         // in the special case of `C:` on Windows, do *not* add a separator
         {
             let comps = self.components();
-            if comps.prefix_len() > 0 && comps.prefix_len() == comps.path.len() &&
-               comps.prefix.unwrap().is_drive() {
+            if comps.prefix_len() > 0
+                && comps.prefix_len() == comps.path.len()
+                && comps.prefix.unwrap().is_drive()
+            {
                 need_sep = false
             }
         }
@@ -1230,12 +1222,11 @@ impl PathBuf {
 
     /// Truncates `self` to [`self.parent`].
     ///
-    /// Returns `false` and does nothing if [`self.file_name`] is [`None`].
+    /// Returns `false` and does nothing if [`self.parent`] is [`None`].
     /// Otherwise, returns `true`.
     ///
     /// [`None`]: ../../std/option/enum.Option.html#variant.None
     /// [`self.parent`]: struct.PathBuf.html#method.parent
-    /// [`self.file_name`]: struct.PathBuf.html#method.file_name
     ///
     /// # Examples
     ///
@@ -1330,20 +1321,24 @@ impl PathBuf {
     }
 
     fn _set_extension(&mut self, extension: &OsStr) -> bool {
-        if self.file_name().is_none() {
-            return false;
-        }
-
-        let mut stem = match self.file_stem() {
-            Some(stem) => stem.to_os_string(),
-            None => OsString::new(),
+        let file_stem = match self.file_stem() {
+            None => return false,
+            Some(f) => os_str_as_u8_slice(f),
         };
 
-        if !os_str_as_u8_slice(extension).is_empty() {
-            stem.push(".");
-            stem.push(extension);
+        // truncate until right after the file stem
+        let end_file_stem = file_stem[file_stem.len()..].as_ptr() as usize;
+        let start = os_str_as_u8_slice(&self.inner).as_ptr() as usize;
+        let v = self.as_mut_vec();
+        v.truncate(end_file_stem.wrapping_sub(start));
+
+        // add the new extension, if any
+        let new = os_str_as_u8_slice(extension);
+        if !new.is_empty() {
+            v.reserve_exact(new.len() + 1);
+            v.push(b'.');
+            v.extend_from_slice(new);
         }
-        self.set_file_name(&stem);
 
         true
     }
@@ -1374,11 +1369,65 @@ impl PathBuf {
         let rw = Box::into_raw(self.inner.into_boxed_os_str()) as *mut Path;
         unsafe { Box::from_raw(rw) }
     }
+
+    /// Invokes [`capacity`] on the underlying instance of [`OsString`].
+    ///
+    /// [`capacity`]: ../ffi/struct.OsString.html#method.capacity
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn capacity(&self) -> usize {
+        self.inner.capacity()
+    }
+
+    /// Invokes [`clear`] on the underlying instance of [`OsString`].
+    ///
+    /// [`clear`]: ../ffi/struct.OsString.html#method.clear
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn clear(&mut self) {
+        self.inner.clear()
+    }
+
+    /// Invokes [`reserve`] on the underlying instance of [`OsString`].
+    ///
+    /// [`reserve`]: ../ffi/struct.OsString.html#method.reserve
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional)
+    }
+
+    /// Invokes [`reserve_exact`] on the underlying instance of [`OsString`].
+    ///
+    /// [`reserve_exact`]: ../ffi/struct.OsString.html#method.reserve_exact
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.inner.reserve_exact(additional)
+    }
+
+    /// Invokes [`shrink_to_fit`] on the underlying instance of [`OsString`].
+    ///
+    /// [`shrink_to_fit`]: ../ffi/struct.OsString.html#method.shrink_to_fit
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn shrink_to_fit(&mut self) {
+        self.inner.shrink_to_fit()
+    }
+
+    /// Invokes [`shrink_to`] on the underlying instance of [`OsString`].
+    ///
+    /// [`shrink_to`]: ../ffi/struct.OsString.html#method.shrink_to
+    /// [`OsString`]: ../ffi/struct.OsString.html
+    #[unstable(feature = "path_buf_capacity", issue = "58234")]
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.inner.shrink_to(min_capacity)
+    }
 }
 
 #[stable(feature = "box_from_path", since = "1.17.0")]
-impl<'a> From<&'a Path> for Box<Path> {
-    fn from(path: &'a Path) -> Box<Path> {
+impl From<&Path> for Box<Path> {
+    fn from(path: &Path) -> Box<Path> {
         let boxed: Box<OsStr> = path.inner.into();
         let rw = Box::into_raw(boxed) as *mut Path;
         unsafe { Box::from_raw(rw) }
@@ -1415,8 +1464,8 @@ impl Clone for Box<Path> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a, T: ?Sized + AsRef<OsStr>> From<&'a T> for PathBuf {
-    fn from(s: &'a T) -> PathBuf {
+impl<T: ?Sized + AsRef<OsStr>> From<&T> for PathBuf {
+    fn from(s: &T) -> PathBuf {
         PathBuf::from(s.as_ref().to_os_string())
     }
 }
@@ -1426,6 +1475,7 @@ impl From<OsString> for PathBuf {
     /// Converts a `OsString` into a `PathBuf`
     ///
     /// This conversion does not allocate or copy memory.
+    #[inline]
     fn from(s: OsString) -> PathBuf {
         PathBuf { inner: s }
     }
@@ -1436,7 +1486,7 @@ impl From<PathBuf> for OsString {
     /// Converts a `PathBuf` into a `OsString`
     ///
     /// This conversion does not allocate or copy memory.
-    fn from(path_buf : PathBuf) -> OsString {
+    fn from(path_buf: PathBuf) -> OsString {
         path_buf.inner
     }
 }
@@ -1453,7 +1503,7 @@ impl From<String> for PathBuf {
 
 #[stable(feature = "path_from_str", since = "1.32.0")]
 impl FromStr for PathBuf {
-    type Err = ParseError;
+    type Err = core::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(PathBuf::from(s))
@@ -1472,15 +1522,13 @@ impl<P: AsRef<Path>> iter::FromIterator<P> for PathBuf {
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<P: AsRef<Path>> iter::Extend<P> for PathBuf {
     fn extend<I: IntoIterator<Item = P>>(&mut self, iter: I) {
-        for p in iter {
-            self.push(p.as_ref())
-        }
+        iter.into_iter().for_each(move |p| self.push(p.as_ref()));
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Debug for PathBuf {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, formatter)
     }
 }
@@ -1488,7 +1536,7 @@ impl fmt::Debug for PathBuf {
 #[stable(feature = "rust1", since = "1.0.0")]
 impl ops::Deref for PathBuf {
     type Target = Path;
-
+    #[inline]
     fn deref(&self) -> &Path {
         Path::new(&self.inner)
     }
@@ -1542,7 +1590,7 @@ impl<'a> From<Cow<'a, Path>> for PathBuf {
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
 impl From<PathBuf> for Arc<Path> {
-    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
+    /// Converts a `PathBuf` into an `Arc` by moving the `PathBuf` data into a new `Arc` buffer.
     #[inline]
     fn from(s: PathBuf) -> Arc<Path> {
         let arc: Arc<OsStr> = Arc::from(s.into_os_string());
@@ -1551,8 +1599,8 @@ impl From<PathBuf> for Arc<Path> {
 }
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
-impl<'a> From<&'a Path> for Arc<Path> {
-    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
+impl From<&Path> for Arc<Path> {
+    /// Converts a `Path` into an `Arc` by copying the `Path` data into a new `Arc` buffer.
     #[inline]
     fn from(s: &Path) -> Arc<Path> {
         let arc: Arc<OsStr> = Arc::from(s.as_os_str());
@@ -1562,7 +1610,7 @@ impl<'a> From<&'a Path> for Arc<Path> {
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
 impl From<PathBuf> for Rc<Path> {
-    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
+    /// Converts a `PathBuf` into an `Rc` by moving the `PathBuf` data into a new `Rc` buffer.
     #[inline]
     fn from(s: PathBuf) -> Rc<Path> {
         let rc: Rc<OsStr> = Rc::from(s.into_os_string());
@@ -1571,8 +1619,8 @@ impl From<PathBuf> for Rc<Path> {
 }
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
-impl<'a> From<&'a Path> for Rc<Path> {
-    /// Converts a Path into a Rc by copying the Path data into a new Rc buffer.
+impl From<&Path> for Rc<Path> {
+    /// Converts a `Path` into an `Rc` by copying the `Path` data into a new `Rc` buffer.
     #[inline]
     fn from(s: &Path) -> Rc<Path> {
         let rc: Rc<OsStr> = Rc::from(s.as_os_str());
@@ -1666,6 +1714,12 @@ impl AsRef<OsStr> for PathBuf {
 /// assert_eq!(extension, Some(OsStr::new("txt")));
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
+// FIXME:
+// `Path::new` current implementation relies
+// on `Path` being layout-compatible with `OsStr`.
+// When attribute privacy is implemented, `Path` should be annotated as `#[repr(transparent)]`.
+// Anyway, `Path` representation and layout are considered implementation detail, are
+// not documented and must not be relied upon.
 pub struct Path {
     inner: OsStr,
 }
@@ -1740,6 +1794,8 @@ impl Path {
     /// Yields a [`&str`] slice if the `Path` is valid unicode.
     ///
     /// This conversion may entail doing a check for UTF-8 validity.
+    /// Note that validation is performed because non-UTF-8 strings are
+    /// perfectly valid for some OS.
     ///
     /// [`&str`]: ../primitive.str.html
     ///
@@ -1778,7 +1834,7 @@ impl Path {
     /// Had `path` contained invalid unicode, the `to_string_lossy` call might
     /// have returned `"fo�.txt"`.
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn to_string_lossy(&self) -> Cow<str> {
+    pub fn to_string_lossy(&self) -> Cow<'_, str> {
         self.inner.to_string_lossy()
     }
 
@@ -1847,7 +1903,7 @@ impl Path {
         !self.is_absolute()
     }
 
-    fn prefix(&self) -> Option<Prefix> {
+    fn prefix(&self) -> Option<Prefix<'_>> {
         self.components().prefix
     }
 
@@ -1895,13 +1951,11 @@ impl Path {
     pub fn parent(&self) -> Option<&Path> {
         let mut comps = self.components();
         let comp = comps.next_back();
-        comp.and_then(|p| {
-            match p {
-                Component::Normal(_) |
-                Component::CurDir |
-                Component::ParentDir => Some(comps.as_path()),
-                _ => None,
+        comp.and_then(|p| match p {
+            Component::Normal(_) | Component::CurDir | Component::ParentDir => {
+                Some(comps.as_path())
             }
+            _ => None,
         })
     }
 
@@ -1928,10 +1982,8 @@ impl Path {
     /// [`None`]: ../../std/option/enum.Option.html#variant.None
     /// [`parent`]: struct.Path.html#method.parent
     #[stable(feature = "path_ancestors", since = "1.28.0")]
-    pub fn ancestors(&self) -> Ancestors {
-        Ancestors {
-            next: Some(&self),
-        }
+    pub fn ancestors(&self) -> Ancestors<'_> {
+        Ancestors { next: Some(&self) }
     }
 
     /// Returns the final component of the `Path`, if there is one.
@@ -1958,11 +2010,9 @@ impl Path {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn file_name(&self) -> Option<&OsStr> {
-        self.components().next_back().and_then(|p| {
-            match p {
-                Component::Normal(p) => Some(p.as_ref()),
-                _ => None,
-            }
+        self.components().next_back().and_then(|p| match p {
+            Component::Normal(p) => Some(p.as_ref()),
+            _ => None,
         })
     }
 
@@ -1995,15 +2045,14 @@ impl Path {
     /// assert_eq!(path.strip_prefix(prefix), Ok(Path::new("haha/foo.txt")));
     /// ```
     #[stable(since = "1.7.0", feature = "path_strip_prefix")]
-    pub fn strip_prefix<P>(&self, base: P)
-                           -> Result<&Path, StripPrefixError>
-        where P: AsRef<Path>
+    pub fn strip_prefix<P>(&self, base: P) -> Result<&Path, StripPrefixError>
+    where
+        P: AsRef<Path>,
     {
         self._strip_prefix(base.as_ref())
     }
 
-    fn _strip_prefix(&self, base: &Path)
-                     -> Result<&Path, StripPrefixError> {
+    fn _strip_prefix(&self, base: &Path) -> Result<&Path, StripPrefixError> {
         iter_after(self.components(), base.components())
             .map(|c| c.as_path())
             .ok_or(StripPrefixError(()))
@@ -2126,6 +2175,7 @@ impl Path {
     /// assert_eq!(Path::new("/etc").join("passwd"), PathBuf::from("/etc/passwd"));
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[must_use]
     pub fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf {
         self._join(path.as_ref())
     }
@@ -2226,13 +2276,13 @@ impl Path {
     /// [`Component`]: enum.Component.html
     /// [`CurDir`]: enum.Component.html#variant.CurDir
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn components(&self) -> Components {
+    pub fn components(&self) -> Components<'_> {
         let prefix = parse_prefix(self.as_os_str());
         Components {
             path: self.as_u8_slice(),
             prefix,
-            has_physical_root: has_physical_root(self.as_u8_slice(), prefix) ||
-                               has_redox_scheme(self.as_u8_slice()),
+            has_physical_root: has_physical_root(self.as_u8_slice(), prefix)
+                || has_redox_scheme(self.as_u8_slice()),
             front: State::Prefix,
             back: State::Body,
         }
@@ -2260,7 +2310,7 @@ impl Path {
     /// assert_eq!(it.next(), None)
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         Iter { inner: self.components() }
     }
 
@@ -2279,7 +2329,7 @@ impl Path {
     /// println!("{}", path.display());
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn display(&self) -> Display {
+    pub fn display(&self) -> Display<'_> {
         Display { path: self }
     }
 
@@ -2393,7 +2443,7 @@ impl Path {
     //     fs::read_dir(self)
     // }
 
-    // /// Returns whether the path points at an existing entity.
+    // /// Returns `true` if the path points at an existing entity.
     // ///
     // /// This function will traverse symbolic links to query information about the
     // /// destination file. In case of broken symbolic links this will return `false`.
@@ -2419,7 +2469,7 @@ impl Path {
     //     fs::metadata(self).is_ok()
     // }
 
-    // /// Returns whether the path exists on disk and is pointing at a regular file.
+    // /// Returns `true` if the path exists on disk and is pointing at a regular file.
     // ///
     // /// This function will traverse symbolic links to query information about the
     // /// destination file. In case of broken symbolic links this will return `false`.
@@ -2448,7 +2498,7 @@ impl Path {
     //     fs::metadata(self).map(|m| m.is_file()).unwrap_or(false)
     // }
 
-    // /// Returns whether the path exists on disk and is pointing at a directory.
+    // /// Returns `true` if the path exists on disk and is pointing at a directory.
     // ///
     // /// This function will traverse symbolic links to query information about the
     // /// destination file. In case of broken symbolic links this will return `false`.
@@ -2499,7 +2549,7 @@ impl AsRef<OsStr> for Path {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Debug for Path {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, formatter)
     }
 }
@@ -2530,15 +2580,15 @@ pub struct Display<'a> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> fmt::Debug for Display<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Debug for Display<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.path, f)
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a> fmt::Display for Display<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Display for Display<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.path.inner.display(f)
     }
 }
@@ -2591,7 +2641,7 @@ impl AsRef<Path> for OsStr {
 }
 
 #[stable(feature = "cow_os_str_as_ref_path", since = "1.8.0")]
-impl<'a> AsRef<Path> for Cow<'a, OsStr> {
+impl AsRef<Path> for Cow<'_, OsStr> {
     fn as_ref(&self) -> &Path {
         Path::new(self)
     }
@@ -2606,6 +2656,7 @@ impl AsRef<Path> for OsString {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl AsRef<Path> for str {
+    #[inline]
     fn as_ref(&self) -> &Path {
         Path::new(self)
     }
@@ -2620,6 +2671,7 @@ impl AsRef<Path> for String {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl AsRef<Path> for PathBuf {
+    #[inline]
     fn as_ref(&self) -> &Path {
         self
     }
@@ -2629,14 +2681,18 @@ impl AsRef<Path> for PathBuf {
 impl<'a> IntoIterator for &'a PathBuf {
     type Item = &'a OsStr;
     type IntoIter = Iter<'a>;
-    fn into_iter(self) -> Iter<'a> { self.iter() }
+    fn into_iter(self) -> Iter<'a> {
+        self.iter()
+    }
 }
 
 #[stable(feature = "path_into_iter", since = "1.6.0")]
 impl<'a> IntoIterator for &'a Path {
     type Item = &'a OsStr;
     type IntoIter = Iter<'a>;
-    fn into_iter(self) -> Iter<'a> { self.iter() }
+    fn into_iter(self) -> Iter<'a> {
+        self.iter()
+    }
 }
 
 macro_rules! impl_cmp {
@@ -2644,13 +2700,17 @@ macro_rules! impl_cmp {
         #[stable(feature = "partialeq_path", since = "1.6.0")]
         impl<'a, 'b> PartialEq<$rhs> for $lhs {
             #[inline]
-            fn eq(&self, other: &$rhs) -> bool { <Path as PartialEq>::eq(self, other) }
+            fn eq(&self, other: &$rhs) -> bool {
+                <Path as PartialEq>::eq(self, other)
+            }
         }
 
         #[stable(feature = "partialeq_path", since = "1.6.0")]
         impl<'a, 'b> PartialEq<$lhs> for $rhs {
             #[inline]
-            fn eq(&self, other: &$lhs) -> bool { <Path as PartialEq>::eq(self, other) }
+            fn eq(&self, other: &$lhs) -> bool {
+                <Path as PartialEq>::eq(self, other)
+            }
         }
 
         #[stable(feature = "cmp_path", since = "1.8.0")]
@@ -2668,7 +2728,7 @@ macro_rules! impl_cmp {
                 <Path as PartialOrd>::partial_cmp(self, other)
             }
         }
-    }
+    };
 }
 
 impl_cmp!(PathBuf, Path);
@@ -2682,13 +2742,17 @@ macro_rules! impl_cmp_os_str {
         #[stable(feature = "cmp_path", since = "1.8.0")]
         impl<'a, 'b> PartialEq<$rhs> for $lhs {
             #[inline]
-            fn eq(&self, other: &$rhs) -> bool { <Path as PartialEq>::eq(self, other.as_ref()) }
+            fn eq(&self, other: &$rhs) -> bool {
+                <Path as PartialEq>::eq(self, other.as_ref())
+            }
         }
 
         #[stable(feature = "cmp_path", since = "1.8.0")]
         impl<'a, 'b> PartialEq<$lhs> for $rhs {
             #[inline]
-            fn eq(&self, other: &$lhs) -> bool { <Path as PartialEq>::eq(self.as_ref(), other) }
+            fn eq(&self, other: &$lhs) -> bool {
+                <Path as PartialEq>::eq(self.as_ref(), other)
+            }
         }
 
         #[stable(feature = "cmp_path", since = "1.8.0")]
@@ -2706,7 +2770,7 @@ macro_rules! impl_cmp_os_str {
                 <Path as PartialOrd>::partial_cmp(self.as_ref(), other)
             }
         }
-    }
+    };
 }
 
 impl_cmp_os_str!(PathBuf, OsStr);
@@ -2726,22 +2790,26 @@ impl_cmp_os_str!(Cow<'a, Path>, OsString);
 
 #[stable(since = "1.7.0", feature = "strip_prefix")]
 impl fmt::Display for StripPrefixError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    #[allow(deprecated, deprecated_in_future)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.description().fmt(f)
     }
 }
 
 #[stable(since = "1.7.0", feature = "strip_prefix")]
 impl Error for StripPrefixError {
-    fn description(&self) -> &str { "prefix not found" }
+    #[allow(deprecated)]
+    fn description(&self) -> &str {
+        "prefix not found"
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use rc::Rc;
-    use sync::Arc;
+    use crate::rc::Rc;
+    use crate::sync::Arc;
 
     macro_rules! t(
         ($path:expr, iter: $iter:expr) => (
@@ -2828,7 +2896,7 @@ mod tests {
 
     #[test]
     fn into() {
-        use borrow::Cow;
+        use crate::borrow::Cow;
 
         let static_path = Path::new("/home/foo");
         let static_cow_path: Cow<'static, Path> = static_path.into();
@@ -2836,7 +2904,7 @@ mod tests {
 
         {
             let path: &Path = &pathbuf;
-            let borrowed_cow_path: Cow<Path> = path.into();
+            let borrowed_cow_path: Cow<'_, Path> = path.into();
 
             assert_eq!(static_cow_path, borrowed_cow_path);
         }
@@ -2850,568 +2918,568 @@ mod tests {
     #[cfg(unix)]
     pub fn test_decompositions_unix() {
         t!("",
-           iter: [],
-           has_root: false,
-           is_absolute: false,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: [],
+        has_root: false,
+        is_absolute: false,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("/",
-           iter: ["/"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["/"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("/foo",
-           iter: ["/", "foo"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("/"),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["/", "foo"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("/"),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("/foo/",
-           iter: ["/", "foo"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("/"),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["/", "foo"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("/"),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/bar",
-           iter: ["foo", "bar"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["foo", "bar"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("/foo/bar",
-           iter: ["/", "foo", "bar"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("/foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["/", "foo", "bar"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("/foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("///foo///",
-           iter: ["/", "foo"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("/"),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["/", "foo"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("/"),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("///foo///bar",
-           iter: ["/", "foo", "bar"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("///foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["/", "foo", "bar"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("///foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("./.",
-           iter: ["."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("/..",
-           iter: ["/", ".."],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("/"),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["/", ".."],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("/"),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("../",
-           iter: [".."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: [".."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo/.",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/..",
-           iter: ["foo", ".."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["foo", ".."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo/./",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/./bar",
-           iter: ["foo", "bar"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["foo", "bar"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("foo/../",
-           iter: ["foo", ".."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["foo", ".."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo/../bar",
-           iter: ["foo", "..", "bar"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo/.."),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["foo", "..", "bar"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo/.."),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("./a",
-           iter: [".", "a"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("."),
-           file_name: Some("a"),
-           file_stem: Some("a"),
-           extension: None
-           );
+        iter: [".", "a"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("."),
+        file_name: Some("a"),
+        file_stem: Some("a"),
+        extension: None
+        );
 
         t!(".",
-           iter: ["."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("./",
-           iter: ["."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("a/b",
-           iter: ["a", "b"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["a", "b"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
 
         t!("a//b",
-           iter: ["a", "b"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["a", "b"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
 
         t!("a/./b",
-           iter: ["a", "b"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["a", "b"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
 
         t!("a/b/c",
-           iter: ["a", "b", "c"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a/b"),
-           file_name: Some("c"),
-           file_stem: Some("c"),
-           extension: None
-           );
+        iter: ["a", "b", "c"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a/b"),
+        file_name: Some("c"),
+        file_stem: Some("c"),
+        extension: None
+        );
 
         t!(".foo",
-           iter: [".foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some(".foo"),
-           file_stem: Some(".foo"),
-           extension: None
-           );
+        iter: [".foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some(".foo"),
+        file_stem: Some(".foo"),
+        extension: None
+        );
     }
 
     #[test]
     #[cfg(windows)]
     pub fn test_decompositions_windows() {
         t!("",
-           iter: [],
-           has_root: false,
-           is_absolute: false,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: [],
+        has_root: false,
+        is_absolute: false,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("/",
-           iter: ["\\"],
-           has_root: true,
-           is_absolute: false,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\"],
+        has_root: true,
+        is_absolute: false,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\",
-           iter: ["\\"],
-           has_root: true,
-           is_absolute: false,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\"],
+        has_root: true,
+        is_absolute: false,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("c:",
-           iter: ["c:"],
-           has_root: false,
-           is_absolute: false,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["c:"],
+        has_root: false,
+        is_absolute: false,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("c:\\",
-           iter: ["c:", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["c:", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("c:/",
-           iter: ["c:", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["c:", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("/foo",
-           iter: ["\\", "foo"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("/"),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["\\", "foo"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("/"),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("/foo/",
-           iter: ["\\", "foo"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("/"),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["\\", "foo"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("/"),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/bar",
-           iter: ["foo", "bar"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["foo", "bar"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("/foo/bar",
-           iter: ["\\", "foo", "bar"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("/foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["\\", "foo", "bar"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("/foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("///foo///",
-           iter: ["\\", "foo"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("/"),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["\\", "foo"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("/"),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("///foo///bar",
-           iter: ["\\", "foo", "bar"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("///foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["\\", "foo", "bar"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("///foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("./.",
-           iter: ["."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("/..",
-           iter: ["\\", ".."],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("/"),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\", ".."],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("/"),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("../",
-           iter: [".."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: [".."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo/.",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/..",
-           iter: ["foo", ".."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["foo", ".."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo/./",
-           iter: ["foo"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: Some("foo"),
-           file_stem: Some("foo"),
-           extension: None
-           );
+        iter: ["foo"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: Some("foo"),
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo/./bar",
-           iter: ["foo", "bar"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["foo", "bar"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("foo/../",
-           iter: ["foo", ".."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo"),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["foo", ".."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo"),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("foo/../bar",
-           iter: ["foo", "..", "bar"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("foo/.."),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
+        iter: ["foo", "..", "bar"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("foo/.."),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("./a",
-           iter: [".", "a"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("."),
-           file_name: Some("a"),
-           file_stem: Some("a"),
-           extension: None
-           );
+        iter: [".", "a"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("."),
+        file_name: Some("a"),
+        file_stem: Some("a"),
+        extension: None
+        );
 
         t!(".",
-           iter: ["."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("./",
-           iter: ["."],
-           has_root: false,
-           is_absolute: false,
-           parent: Some(""),
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["."],
+        has_root: false,
+        is_absolute: false,
+        parent: Some(""),
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("a/b",
-           iter: ["a", "b"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["a", "b"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
 
         t!("a//b",
-           iter: ["a", "b"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["a", "b"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
 
         t!("a/./b",
-           iter: ["a", "b"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["a", "b"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
 
         t!("a/b/c",
            iter: ["a", "b", "c"],
@@ -3423,291 +3491,273 @@ mod tests {
            extension: None);
 
         t!("a\\b\\c",
-           iter: ["a", "b", "c"],
-           has_root: false,
-           is_absolute: false,
-           parent: Some("a\\b"),
-           file_name: Some("c"),
-           file_stem: Some("c"),
-           extension: None
-           );
+        iter: ["a", "b", "c"],
+        has_root: false,
+        is_absolute: false,
+        parent: Some("a\\b"),
+        file_name: Some("c"),
+        file_stem: Some("c"),
+        extension: None
+        );
 
         t!("\\a",
-           iter: ["\\", "a"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("\\"),
-           file_name: Some("a"),
-           file_stem: Some("a"),
-           extension: None
-           );
+        iter: ["\\", "a"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("\\"),
+        file_name: Some("a"),
+        file_stem: Some("a"),
+        extension: None
+        );
 
         t!("c:\\foo.txt",
-           iter: ["c:", "\\", "foo.txt"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("c:\\"),
-           file_name: Some("foo.txt"),
-           file_stem: Some("foo"),
-           extension: Some("txt")
-           );
+        iter: ["c:", "\\", "foo.txt"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("c:\\"),
+        file_name: Some("foo.txt"),
+        file_stem: Some("foo"),
+        extension: Some("txt")
+        );
 
         t!("\\\\server\\share\\foo.txt",
-           iter: ["\\\\server\\share", "\\", "foo.txt"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\server\\share\\"),
-           file_name: Some("foo.txt"),
-           file_stem: Some("foo"),
-           extension: Some("txt")
-           );
+        iter: ["\\\\server\\share", "\\", "foo.txt"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\server\\share\\"),
+        file_name: Some("foo.txt"),
+        file_stem: Some("foo"),
+        extension: Some("txt")
+        );
 
         t!("\\\\server\\share",
-           iter: ["\\\\server\\share", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\\\server\\share", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\server",
-           iter: ["\\", "server"],
-           has_root: true,
-           is_absolute: false,
-           parent: Some("\\"),
-           file_name: Some("server"),
-           file_stem: Some("server"),
-           extension: None
-           );
+        iter: ["\\", "server"],
+        has_root: true,
+        is_absolute: false,
+        parent: Some("\\"),
+        file_name: Some("server"),
+        file_stem: Some("server"),
+        extension: None
+        );
 
         t!("\\\\?\\bar\\foo.txt",
-           iter: ["\\\\?\\bar", "\\", "foo.txt"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\?\\bar\\"),
-           file_name: Some("foo.txt"),
-           file_stem: Some("foo"),
-           extension: Some("txt")
-           );
+        iter: ["\\\\?\\bar", "\\", "foo.txt"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\?\\bar\\"),
+        file_name: Some("foo.txt"),
+        file_stem: Some("foo"),
+        extension: Some("txt")
+        );
 
         t!("\\\\?\\bar",
-           iter: ["\\\\?\\bar"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\\\?\\bar"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\",
-           iter: ["\\\\?\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\\\?\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\UNC\\server\\share\\foo.txt",
-           iter: ["\\\\?\\UNC\\server\\share", "\\", "foo.txt"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\?\\UNC\\server\\share\\"),
-           file_name: Some("foo.txt"),
-           file_stem: Some("foo"),
-           extension: Some("txt")
-           );
+        iter: ["\\\\?\\UNC\\server\\share", "\\", "foo.txt"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\?\\UNC\\server\\share\\"),
+        file_name: Some("foo.txt"),
+        file_stem: Some("foo"),
+        extension: Some("txt")
+        );
 
         t!("\\\\?\\UNC\\server",
-           iter: ["\\\\?\\UNC\\server"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\\\?\\UNC\\server"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\UNC\\",
-           iter: ["\\\\?\\UNC\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\\\?\\UNC\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\C:\\foo.txt",
-           iter: ["\\\\?\\C:", "\\", "foo.txt"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\?\\C:\\"),
-           file_name: Some("foo.txt"),
-           file_stem: Some("foo"),
-           extension: Some("txt")
-           );
-
+        iter: ["\\\\?\\C:", "\\", "foo.txt"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\?\\C:\\"),
+        file_name: Some("foo.txt"),
+        file_stem: Some("foo"),
+        extension: Some("txt")
+        );
 
         t!("\\\\?\\C:\\",
-           iter: ["\\\\?\\C:", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
-
+        iter: ["\\\\?\\C:", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\C:",
-           iter: ["\\\\?\\C:"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
-
+        iter: ["\\\\?\\C:"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\foo/bar",
-           iter: ["\\\\?\\foo/bar"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
-
+        iter: ["\\\\?\\foo/bar"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\C:/foo",
-           iter: ["\\\\?\\C:/foo"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
-
+        iter: ["\\\\?\\C:/foo"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\.\\foo\\bar",
-           iter: ["\\\\.\\foo", "\\", "bar"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\.\\foo\\"),
-           file_name: Some("bar"),
-           file_stem: Some("bar"),
-           extension: None
-           );
-
+        iter: ["\\\\.\\foo", "\\", "bar"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\.\\foo\\"),
+        file_name: Some("bar"),
+        file_stem: Some("bar"),
+        extension: None
+        );
 
         t!("\\\\.\\foo",
-           iter: ["\\\\.\\foo", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
-
+        iter: ["\\\\.\\foo", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\.\\foo/bar",
-           iter: ["\\\\.\\foo/bar", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
-
+        iter: ["\\\\.\\foo/bar", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\.\\foo\\bar/baz",
-           iter: ["\\\\.\\foo", "\\", "bar", "baz"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\.\\foo\\bar"),
-           file_name: Some("baz"),
-           file_stem: Some("baz"),
-           extension: None
-           );
-
+        iter: ["\\\\.\\foo", "\\", "bar", "baz"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\.\\foo\\bar"),
+        file_name: Some("baz"),
+        file_stem: Some("baz"),
+        extension: None
+        );
 
         t!("\\\\.\\",
-           iter: ["\\\\.\\", "\\"],
-           has_root: true,
-           is_absolute: true,
-           parent: None,
-           file_name: None,
-           file_stem: None,
-           extension: None
-           );
+        iter: ["\\\\.\\", "\\"],
+        has_root: true,
+        is_absolute: true,
+        parent: None,
+        file_name: None,
+        file_stem: None,
+        extension: None
+        );
 
         t!("\\\\?\\a\\b\\",
-           iter: ["\\\\?\\a", "\\", "b"],
-           has_root: true,
-           is_absolute: true,
-           parent: Some("\\\\?\\a\\"),
-           file_name: Some("b"),
-           file_stem: Some("b"),
-           extension: None
-           );
+        iter: ["\\\\?\\a", "\\", "b"],
+        has_root: true,
+        is_absolute: true,
+        parent: Some("\\\\?\\a\\"),
+        file_name: Some("b"),
+        file_stem: Some("b"),
+        extension: None
+        );
     }
 
     #[test]
     pub fn test_stem_ext() {
         t!("foo",
-           file_stem: Some("foo"),
-           extension: None
-           );
+        file_stem: Some("foo"),
+        extension: None
+        );
 
         t!("foo.",
-           file_stem: Some("foo"),
-           extension: Some("")
-           );
+        file_stem: Some("foo"),
+        extension: Some("")
+        );
 
         t!(".foo",
-           file_stem: Some(".foo"),
-           extension: None
-           );
+        file_stem: Some(".foo"),
+        extension: None
+        );
 
         t!("foo.txt",
-           file_stem: Some("foo"),
-           extension: Some("txt")
-           );
+        file_stem: Some("foo"),
+        extension: Some("txt")
+        );
 
         t!("foo.bar.txt",
-           file_stem: Some("foo.bar"),
-           extension: Some("txt")
-           );
+        file_stem: Some("foo.bar"),
+        extension: Some("txt")
+        );
 
         t!("foo.bar.",
-           file_stem: Some("foo.bar"),
-           extension: Some("")
-           );
+        file_stem: Some("foo.bar"),
+        extension: Some("")
+        );
 
-        t!(".",
-           file_stem: None,
-           extension: None
-           );
+        t!(".", file_stem: None, extension: None);
 
-        t!("..",
-           file_stem: None,
-           extension: None
-           );
+        t!("..", file_stem: None, extension: None);
 
-        t!("",
-           file_stem: None,
-           extension: None
-           );
+        t!("", file_stem: None, extension: None);
     }
 
     #[test]
@@ -3722,7 +3772,7 @@ mod tests {
             });
         );
 
-        if cfg!(unix) {
+        if cfg!(unix) || cfg!(all(target_env = "sgx", target_vendor = "fortanix")) {
             tp!("", "foo", "foo");
             tp!("foo", "bar", "foo/bar");
             tp!("foo/", "bar", "foo/bar");
@@ -3775,26 +3825,20 @@ mod tests {
             tp!("C:a\\b\\c", "C:d", "C:d");
             tp!("C:", r"a\b\c", r"C:a\b\c");
             tp!("C:", r"..\a", r"C:..\a");
-            tp!("\\\\server\\share\\foo",
-                "bar",
-                "\\\\server\\share\\foo\\bar");
+            tp!("\\\\server\\share\\foo", "bar", "\\\\server\\share\\foo\\bar");
             tp!("\\\\server\\share\\foo", "C:baz", "C:baz");
             tp!("\\\\?\\C:\\a\\b", "C:c\\d", "C:c\\d");
             tp!("\\\\?\\C:a\\b", "C:c\\d", "C:c\\d");
             tp!("\\\\?\\C:\\a\\b", "C:\\c\\d", "C:\\c\\d");
             tp!("\\\\?\\foo\\bar", "baz", "\\\\?\\foo\\bar\\baz");
-            tp!("\\\\?\\UNC\\server\\share\\foo",
-                "bar",
-                "\\\\?\\UNC\\server\\share\\foo\\bar");
+            tp!("\\\\?\\UNC\\server\\share\\foo", "bar", "\\\\?\\UNC\\server\\share\\foo\\bar");
             tp!("\\\\?\\UNC\\server\\share", "C:\\a", "C:\\a");
             tp!("\\\\?\\UNC\\server\\share", "C:a", "C:a");
 
             // Note: modified from old path API
             tp!("\\\\?\\UNC\\server", "foo", "\\\\?\\UNC\\server\\foo");
 
-            tp!("C:\\a",
-                "\\\\?\\UNC\\server\\share",
-                "\\\\?\\UNC\\server\\share");
+            tp!("C:\\a", "\\\\?\\UNC\\server\\share", "\\\\?\\UNC\\server\\share");
             tp!("\\\\.\\foo\\bar", "baz", "\\\\.\\foo\\bar\\baz");
             tp!("\\\\.\\foo\\bar", "C:a", "C:a");
             // again, not sure about the following, but I'm assuming \\.\ should be verbatim
@@ -3847,15 +3891,9 @@ mod tests {
             tp!("\\\\?\\C:\\a\\b", "\\\\?\\C:\\a", true);
             tp!("\\\\?\\C:\\a", "\\\\?\\C:\\", true);
             tp!("\\\\?\\C:\\", "\\\\?\\C:\\", false);
-            tp!("\\\\?\\UNC\\server\\share\\a\\b",
-                "\\\\?\\UNC\\server\\share\\a",
-                true);
-            tp!("\\\\?\\UNC\\server\\share\\a",
-                "\\\\?\\UNC\\server\\share\\",
-                true);
-            tp!("\\\\?\\UNC\\server\\share",
-                "\\\\?\\UNC\\server\\share",
-                false);
+            tp!("\\\\?\\UNC\\server\\share\\a\\b", "\\\\?\\UNC\\server\\share\\a", true);
+            tp!("\\\\?\\UNC\\server\\share\\a", "\\\\?\\UNC\\server\\share\\", true);
+            tp!("\\\\?\\UNC\\server\\share", "\\\\?\\UNC\\server\\share", false);
             tp!("\\\\.\\a\\b\\c", "\\\\.\\a\\b", true);
             tp!("\\\\.\\a\\b", "\\\\.\\a\\", true);
             tp!("\\\\.\\a", "\\\\.\\a", false);
@@ -3881,7 +3919,7 @@ mod tests {
         tfn!("foo", "bar", "bar");
         tfn!("foo", "", "");
         tfn!("", "foo", "foo");
-        if cfg!(unix) {
+        if cfg!(unix) || cfg!(all(target_env = "sgx", target_vendor = "fortanix")) {
             tfn!(".", "foo", "./foo");
             tfn!("foo/", "bar", "bar");
             tfn!("foo/.", "bar", "bar");
@@ -3928,14 +3966,14 @@ mod tests {
 
     #[test]
     fn test_eq_receivers() {
-        use borrow::Cow;
+        use crate::borrow::Cow;
 
         let borrowed: &Path = Path::new("foo/bar");
         let mut owned: PathBuf = PathBuf::new();
         owned.push("foo");
         owned.push("bar");
-        let borrowed_cow: Cow<Path> = borrowed.into();
-        let owned_cow: Cow<Path> = owned.clone().into();
+        let borrowed_cow: Cow<'_, Path> = borrowed.into();
+        let owned_cow: Cow<'_, Path> = owned.clone().into();
 
         macro_rules! t {
             ($($current:expr),+) => {
@@ -3953,8 +3991,8 @@ mod tests {
 
     #[test]
     pub fn test_compare() {
-        use hash::{Hash, Hasher};
-        use collections::hash_map::DefaultHasher;
+        use crate::collections::hash_map::DefaultHasher;
+        use crate::hash::{Hash, Hasher};
 
         fn hash<T: Hash>(t: T) -> u64 {
             let mut s = DefaultHasher::new();
@@ -3997,83 +4035,83 @@ mod tests {
         );
 
         tc!("", "",
-            eq: true,
-            starts_with: true,
-            ends_with: true,
-            relative_from: Some("")
-            );
+        eq: true,
+        starts_with: true,
+        ends_with: true,
+        relative_from: Some("")
+        );
 
         tc!("foo", "",
-            eq: false,
-            starts_with: true,
-            ends_with: true,
-            relative_from: Some("foo")
-            );
+        eq: false,
+        starts_with: true,
+        ends_with: true,
+        relative_from: Some("foo")
+        );
 
         tc!("", "foo",
-            eq: false,
-            starts_with: false,
-            ends_with: false,
-            relative_from: None
-            );
+        eq: false,
+        starts_with: false,
+        ends_with: false,
+        relative_from: None
+        );
 
         tc!("foo", "foo",
-            eq: true,
-            starts_with: true,
-            ends_with: true,
-            relative_from: Some("")
-            );
+        eq: true,
+        starts_with: true,
+        ends_with: true,
+        relative_from: Some("")
+        );
 
         tc!("foo/", "foo",
-            eq: true,
-            starts_with: true,
-            ends_with: true,
-            relative_from: Some("")
-            );
+        eq: true,
+        starts_with: true,
+        ends_with: true,
+        relative_from: Some("")
+        );
 
         tc!("foo/bar", "foo",
-            eq: false,
-            starts_with: true,
-            ends_with: false,
-            relative_from: Some("bar")
-            );
+        eq: false,
+        starts_with: true,
+        ends_with: false,
+        relative_from: Some("bar")
+        );
 
         tc!("foo/bar/baz", "foo/bar",
-            eq: false,
-            starts_with: true,
-            ends_with: false,
-            relative_from: Some("baz")
-            );
+        eq: false,
+        starts_with: true,
+        ends_with: false,
+        relative_from: Some("baz")
+        );
 
         tc!("foo/bar", "foo/bar/baz",
-            eq: false,
-            starts_with: false,
-            ends_with: false,
-            relative_from: None
-            );
+        eq: false,
+        starts_with: false,
+        ends_with: false,
+        relative_from: None
+        );
 
         tc!("./foo/bar/", ".",
-            eq: false,
-            starts_with: true,
-            ends_with: false,
-            relative_from: Some("foo/bar")
-            );
+        eq: false,
+        starts_with: true,
+        ends_with: false,
+        relative_from: Some("foo/bar")
+        );
 
         if cfg!(windows) {
             tc!(r"C:\src\rust\cargo-test\test\Cargo.toml",
-                r"c:\src\rust\cargo-test\test",
-                eq: false,
-                starts_with: true,
-                ends_with: false,
-                relative_from: Some("Cargo.toml")
-                );
+            r"c:\src\rust\cargo-test\test",
+            eq: false,
+            starts_with: true,
+            ends_with: false,
+            relative_from: Some("Cargo.toml")
+            );
 
             tc!(r"c:\foo", r"C:\foo",
-                eq: true,
-                starts_with: true,
-                ends_with: true,
-                relative_from: Some("")
-                );
+            eq: true,
+            starts_with: true,
+            ends_with: true,
+            relative_from: Some("")
+            );
         }
     }
 

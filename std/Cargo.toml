@@ -2,5 +2,7 @@
 name = "std"
 version = "0.1.0"
 authors = ["Sergio Benitez <sb@sergio.bz>"]
+edition = "2018"
 
 [dependencies]
+hashbrown = { version = "0.6.2", default-features = false, features = ['nightly', 'rustc-internal-api'] }

@@ -7,29 +7,27 @@
 //! * Executing a panic up to doing the actual implementation
 //! * Shims around "try"
 
-use core::panic::BoxMeUp;
+use core::panic::{BoxMeUp, Location, PanicInfo};
 
-use io::prelude::*;
+use crate::any::Any;
+use crate::fmt;
+use crate::intrinsics;
+use crate::mem::{self, ManuallyDrop};
+use crate::process;
+use crate::raw;
+use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::sys::stdio::panic_output;
+use crate::sys_common::backtrace::{self, RustBacktrace};
+use crate::sys_common::rwlock::RWLock;
+use crate::sys_common::{thread_info, util};
+use crate::thread;
 
-use any::Any;
-use cell::RefCell;
-use core::panic::{PanicInfo, Location};
-use fmt;
-use intrinsics;
-use mem;
-use ptr;
-use raw;
-use sys::stdio::panic_output;
-use sys_common::rwlock::RWLock;
-use sys_common::thread_info;
-use sys_common::util;
-use thread;
-
-thread_local! {
-    pub static LOCAL_STDERR: RefCell<Option<Box<dyn Write + Send>>> = {
-        RefCell::new(None)
-    }
-}
+#[cfg(not(test))]
+use crate::io::set_panic;
+// make sure to use the stderr output configured
+// by libtest in the real copy of std
+#[cfg(test)]
+use realstd::io::set_panic;
 
 // Binary interface to the panic runtime that the standard library depends on.
 //
@@ -42,19 +40,34 @@ thread_local! {
 // One day this may look a little less ad-hoc with the compiler helping out to
 // hook up these functions, but it is not this day!
 #[allow(improper_ctypes)]
-extern {
-    fn __rust_maybe_catch_panic(f: fn(*mut u8),
-                                data: *mut u8,
-                                data_ptr: *mut usize,
-                                vtable_ptr: *mut usize) -> u32;
+extern "C" {
+    fn __rust_maybe_catch_panic(
+        f: fn(*mut u8),
+        data: *mut u8,
+        data_ptr: *mut usize,
+        vtable_ptr: *mut usize,
+    ) -> u32;
+
+    /// `payload` is actually a `*mut &mut dyn BoxMeUp` but that would cause FFI warnings.
+    /// It cannot be `Box<dyn BoxMeUp>` because the other end of this call does not depend
+    /// on liballoc, and thus cannot use `Box`.
     #[unwind(allowed)]
     fn __rust_start_panic(payload: usize) -> u32;
+}
+
+/// This function is called by the panic runtime if FFI code catches a Rust
+/// panic but doesn't rethrow it. We don't support this case since it messes
+/// with our panic count.
+#[cfg(not(test))]
+#[rustc_std_internal_symbol]
+extern "C" fn __rust_drop_panic() -> ! {
+    rtabort!("Rust panics must be rethrown");
 }
 
 #[derive(Copy, Clone)]
 enum Hook {
     Default,
-    Custom(*mut (dyn Fn(&PanicInfo) + 'static + Sync + Send)),
+    Custom(*mut (dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send)),
 }
 
 static HOOK_LOCK: RWLock = RWLock::new();
@@ -94,7 +107,7 @@ static mut HOOK: Hook = Hook::Default;
 /// panic!("Normal panic");
 /// ```
 #[stable(feature = "panic_hooks", since = "1.10.0")]
-pub fn set_hook(hook: Box<dyn Fn(&PanicInfo) + 'static + Sync + Send>) {
+pub fn set_hook(hook: Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send>) {
     if thread::panicking() {
         panic!("cannot modify the panic hook from a panicking thread");
     }
@@ -106,7 +119,10 @@ pub fn set_hook(hook: Box<dyn Fn(&PanicInfo) + 'static + Sync + Send>) {
         HOOK_LOCK.write_unlock();
 
         if let Hook::Custom(ptr) = old_hook {
-            Box::from_raw(ptr);
+            #[allow(unused_must_use)]
+            {
+                Box::from_raw(ptr);
+            }
         }
     }
 }
@@ -139,7 +155,7 @@ pub fn set_hook(hook: Box<dyn Fn(&PanicInfo) + 'static + Sync + Send>) {
 /// panic!("Normal panic");
 /// ```
 #[stable(feature = "panic_hooks", since = "1.10.0")]
-pub fn take_hook() -> Box<dyn Fn(&PanicInfo) + 'static + Sync + Send> {
+pub fn take_hook() -> Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send> {
     if thread::panicking() {
         panic!("cannot modify the panic hook from a panicking thread");
     }
@@ -157,77 +173,69 @@ pub fn take_hook() -> Box<dyn Fn(&PanicInfo) + 'static + Sync + Send> {
     }
 }
 
-fn default_hook(info: &PanicInfo) {
-    #[cfg(feature = "backtrace")]
-    use sys_common::backtrace;
-
+fn default_hook(info: &PanicInfo<'_>) {
     // If this is a double panic, make sure that we print a backtrace
     // for this panic. Otherwise only print it if logging is enabled.
-    #[cfg(feature = "backtrace")]
-    let log_backtrace = {
-        let panics = update_panic_count(0);
-
-        if panics >= 2 {
-            Some(backtrace::PrintFormat::Full)
-        } else {
-            backtrace::log_enabled()
-        }
+    let backtrace_env = if update_panic_count(0) >= 2 {
+        RustBacktrace::Print(backtrace_rs::PrintFmt::Full)
+    } else {
+        backtrace::rust_backtrace_env()
     };
 
-    let location = info.location().unwrap();  // The current implementation always returns Some
+    // The current implementation always returns `Some`.
+    let location = info.location().unwrap();
 
     let msg = match info.payload().downcast_ref::<&'static str>() {
         Some(s) => *s,
         None => match info.payload().downcast_ref::<String>() {
             Some(s) => &s[..],
             None => "Box<Any>",
-        }
+        },
     };
     let thread = thread_info::current_thread();
     let name = thread.as_ref().and_then(|t| t.name()).unwrap_or("<unnamed>");
 
-    let write = |err: &mut dyn (::io::Write)| {
-        let _ = writeln!(err, "thread '{}' panicked at '{}', {}",
-                         name, msg, location);
+    let write = |err: &mut dyn crate::io::Write| {
+        let _ = writeln!(err, "thread '{}' panicked at '{}', {}", name, msg, location);
 
-        #[cfg(feature = "backtrace")]
-        {
-            use sync::atomic::{AtomicBool, Ordering};
+        static FIRST_PANIC: AtomicBool = AtomicBool::new(true);
 
-            static FIRST_PANIC: AtomicBool = AtomicBool::new(true);
-
-            if let Some(format) = log_backtrace {
-                let _ = backtrace::print(err, format);
-            } else if FIRST_PANIC.compare_and_swap(true, false, Ordering::SeqCst) {
-                let _ = writeln!(err, "note: Run with `RUST_BACKTRACE=1` \
-                                       environment variable to display a backtrace.");
+        match backtrace_env {
+            RustBacktrace::Print(format) => drop(backtrace::print(err, format)),
+            RustBacktrace::Disabled => {}
+            RustBacktrace::RuntimeDisabled => {
+                if FIRST_PANIC.swap(false, Ordering::SeqCst) {
+                    let _ = writeln!(
+                        err,
+                        "note: run with `RUST_BACKTRACE=1` \
+                                           environment variable to display a backtrace."
+                    );
+                }
             }
         }
     };
 
-    if let Some(mut local) = LOCAL_STDERR.with(|s| s.borrow_mut().take()) {
-       write(&mut *local);
-       let mut s = Some(local);
-       LOCAL_STDERR.with(|slot| {
-           *slot.borrow_mut() = s.take();
-       });
+    if let Some(mut local) = set_panic(None) {
+        // NB. In `cfg(test)` this uses the forwarding impl
+        // for `Box<dyn (::realstd::io::Write) + Send>`.
+        write(&mut local);
+        set_panic(Some(local));
     } else if let Some(mut out) = panic_output() {
         write(&mut out);
     }
 }
 
-
 #[cfg(not(test))]
 #[doc(hidden)]
-#[unstable(feature = "update_panic_count", issue = "0")]
+#[unstable(feature = "update_panic_count", issue = "none")]
 pub fn update_panic_count(amt: isize) -> usize {
-    use cell::Cell;
+    use crate::cell::Cell;
     thread_local! { static PANIC_COUNT: Cell<usize> = Cell::new(0) }
 
     PANIC_COUNT.with(|c| {
         let next = (c.get() as isize + amt) as usize;
         c.set(next);
-        return next
+        next
     })
 }
 
@@ -235,11 +243,10 @@ pub fn update_panic_count(amt: isize) -> usize {
 pub use realstd::rt::update_panic_count;
 
 /// Invoke a closure, capturing the cause of an unwinding panic if one occurs.
-pub unsafe fn try<R, F: FnOnce() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
-    #[allow(unions_with_drop_fields)]
+pub unsafe fn r#try<R, F: FnOnce() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
     union Data<F, R> {
-        f: F,
-        r: R,
+        f: ManuallyDrop<F>,
+        r: ManuallyDrop<R>,
     }
 
     // We do some sketchy operations with ownership here for the sake of
@@ -269,18 +276,18 @@ pub unsafe fn try<R, F: FnOnce() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
     // method of calling a catch panic whilst juggling ownership.
     let mut any_data = 0;
     let mut any_vtable = 0;
-    let mut data = Data {
-        f,
-    };
+    let mut data = Data { f: ManuallyDrop::new(f) };
 
-    let r = __rust_maybe_catch_panic(do_call::<F, R>,
-                                     &mut data as *mut _ as *mut u8,
-                                     &mut any_data,
-                                     &mut any_vtable);
+    let r = __rust_maybe_catch_panic(
+        do_call::<F, R>,
+        &mut data as *mut _ as *mut u8,
+        &mut any_data,
+        &mut any_vtable,
+    );
 
     return if r == 0 {
         debug_assert!(update_panic_count(0) == 0);
-        Ok(data.r)
+        Ok(ManuallyDrop::into_inner(data.r))
     } else {
         update_panic_count(-1);
         debug_assert!(update_panic_count(0) == 0);
@@ -293,8 +300,9 @@ pub unsafe fn try<R, F: FnOnce() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
     fn do_call<F: FnOnce() -> R, R>(data: *mut u8) {
         unsafe {
             let data = data as *mut Data<F, R>;
-            let f = ptr::read(&mut (*data).f);
-            ptr::write(&mut (*data).r, f());
+            let data = &mut (*data);
+            let f = ManuallyDrop::take(&mut data.f);
+            data.r = ManuallyDrop::new(f());
         }
     }
 }
@@ -304,43 +312,32 @@ pub fn panicking() -> bool {
     update_panic_count(0) != 0
 }
 
-/// Entry point of panic from the libcore crate.
-#[cfg(not(test))]
-#[panic_handler]
-#[unwind(allowed)]
-pub fn rust_begin_panic(info: &PanicInfo) -> ! {
-    continue_panic_fmt(&info)
-}
-
 /// The entry point for panicking with a formatted message.
 ///
 /// This is designed to reduce the amount of code required at the call
 /// site as much as possible (so that `panic!()` has as low an impact
 /// on (e.g.) the inlining of other functions as possible), by moving
 /// the actual formatting into this shared place.
-#[unstable(feature = "libstd_sys_internals",
-           reason = "used by the panic! macro",
-           issue = "0")]
+#[unstable(feature = "libstd_sys_internals", reason = "used by the panic! macro", issue = "none")]
 #[cold]
 // If panic_immediate_abort, inline the abort call,
 // otherwise avoid inlining because of it is cold path.
-#[cfg_attr(not(feature="panic_immediate_abort"),inline(never))]
-#[cfg_attr(    feature="panic_immediate_abort" ,inline)]
-pub fn begin_panic_fmt(msg: &fmt::Arguments,
-                       file_line_col: &(&'static str, u32, u32)) -> ! {
+#[cfg_attr(not(feature = "panic_immediate_abort"), track_caller)]
+#[cfg_attr(not(feature = "panic_immediate_abort"), inline(never))]
+#[cfg_attr(feature = "panic_immediate_abort", inline)]
+pub fn begin_panic_fmt(msg: &fmt::Arguments<'_>) -> ! {
     if cfg!(feature = "panic_immediate_abort") {
         unsafe { intrinsics::abort() }
     }
 
-    let (file, line, col) = *file_line_col;
-    let info = PanicInfo::internal_constructor(
-        Some(msg),
-        Location::internal_constructor(file, line, col),
-    );
-    continue_panic_fmt(&info)
+    let info = PanicInfo::internal_constructor(Some(msg), Location::caller());
+    begin_panic_handler(&info)
 }
 
-fn continue_panic_fmt(info: &PanicInfo) -> ! {
+/// Entry point of panics from the libcore crate (`panic_impl` lang item).
+#[cfg_attr(not(test), panic_handler)]
+#[unwind(allowed)]
+pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
     struct PanicPayload<'a> {
         inner: &'a fmt::Arguments<'a>,
         string: Option<String>,
@@ -352,9 +349,10 @@ fn continue_panic_fmt(info: &PanicInfo) -> ! {
         }
 
         fn fill(&mut self) -> &mut String {
-            use fmt::Write;
+            use crate::fmt::Write;
 
             let inner = self.inner;
+            // Lazily, the first time this gets called, run the actual string formatting.
             self.string.get_or_insert_with(|| {
                 let mut s = String::new();
                 drop(s.write_fmt(*inner));
@@ -364,8 +362,11 @@ fn continue_panic_fmt(info: &PanicInfo) -> ! {
     }
 
     unsafe impl<'a> BoxMeUp for PanicPayload<'a> {
-        fn box_me_up(&mut self) -> *mut (dyn Any + Send) {
-            let contents = mem::replace(self.fill(), String::new());
+        fn take_box(&mut self) -> *mut (dyn Any + Send) {
+            // We do two allocations here, unfortunately. But (a) they're required with the current
+            // scheme, and (b) we don't handle panic + OOM properly anyway (see comment in
+            // begin_panic below).
+            let contents = mem::take(self.fill());
             Box::into_raw(Box::new(contents))
         }
 
@@ -374,42 +375,28 @@ fn continue_panic_fmt(info: &PanicInfo) -> ! {
         }
     }
 
-    // We do two allocations here, unfortunately. But (a) they're
-    // required with the current scheme, and (b) we don't handle
-    // panic + OOM properly anyway (see comment in begin_panic
-    // below).
-
     let loc = info.location().unwrap(); // The current implementation always returns Some
     let msg = info.message().unwrap(); // The current implementation always returns Some
-    let file_line_col = (loc.file(), loc.line(), loc.column());
-    rust_panic_with_hook(
-        &mut PanicPayload::new(msg),
-        info.message(),
-        &file_line_col);
+    rust_panic_with_hook(&mut PanicPayload::new(msg), info.message(), loc);
 }
 
-/// This is the entry point of panicking for panic!() and assert!().
-#[unstable(feature = "libstd_sys_internals",
-           reason = "used by the panic! macro",
-           issue = "0")]
+/// This is the entry point of panicking for the non-format-string variants of
+/// panic!() and assert!(). In particular, this is the only entry point that supports
+/// arbitrary payloads, not just format strings.
+#[unstable(feature = "libstd_sys_internals", reason = "used by the panic! macro", issue = "none")]
 #[cfg_attr(not(test), lang = "begin_panic")]
+// lang item for CTFE panic support
 // never inline unless panic_immediate_abort to avoid code
 // bloat at the call sites as much as possible
-#[cfg_attr(not(feature="panic_immediate_abort"),inline(never))]
+#[cfg_attr(not(feature = "panic_immediate_abort"), inline(never))]
 #[cold]
-pub fn begin_panic<M: Any + Send>(msg: M, file_line_col: &(&'static str, u32, u32)) -> ! {
+#[track_caller]
+pub fn begin_panic<M: Any + Send>(msg: M, #[cfg(bootstrap)] _: &(&str, u32, u32)) -> ! {
     if cfg!(feature = "panic_immediate_abort") {
         unsafe { intrinsics::abort() }
     }
 
-    // Note that this should be the only allocation performed in this code path.
-    // Currently this means that panic!() on OOM will invoke this code path,
-    // but then again we're not really ready for panic on OOM anyway. If
-    // we do start doing this, then we should propagate this allocation to
-    // be performed in the parent of this thread instead of the thread that's
-    // panicking.
-
-    rust_panic_with_hook(&mut PanicPayload::new(msg), None, file_line_col);
+    rust_panic_with_hook(&mut PanicPayload::new(msg), None, Location::caller());
 
     struct PanicPayload<A> {
         inner: Option<A>,
@@ -422,10 +409,15 @@ pub fn begin_panic<M: Any + Send>(msg: M, file_line_col: &(&'static str, u32, u3
     }
 
     unsafe impl<A: Send + 'static> BoxMeUp for PanicPayload<A> {
-        fn box_me_up(&mut self) -> *mut (dyn Any + Send) {
+        fn take_box(&mut self) -> *mut (dyn Any + Send) {
+            // Note that this should be the only allocation performed in this code path. Currently
+            // this means that panic!() on OOM will invoke this code path, but then again we're not
+            // really ready for panic on OOM anyway. If we do start doing this, then we should
+            // propagate this allocation to be performed in the parent of this thread instead of the
+            // thread that's panicking.
             let data = match self.inner.take() {
                 Some(a) => Box::new(a) as Box<dyn Any + Send>,
-                None => Box::new(()),
+                None => process::abort(),
             };
             Box::into_raw(data)
         }
@@ -433,7 +425,7 @@ pub fn begin_panic<M: Any + Send>(msg: M, file_line_col: &(&'static str, u32, u3
         fn get(&mut self) -> &(dyn Any + Send) {
             match self.inner {
                 Some(ref a) => a,
-                None => &(),
+                None => process::abort(),
             }
         }
     }
@@ -444,11 +436,11 @@ pub fn begin_panic<M: Any + Send>(msg: M, file_line_col: &(&'static str, u32, u3
 /// Executes the primary logic for a panic, including checking for recursive
 /// panics, panic hooks, and finally dispatching to the panic runtime to either
 /// abort or unwind.
-fn rust_panic_with_hook(payload: &mut dyn BoxMeUp,
-                        message: Option<&fmt::Arguments>,
-                        file_line_col: &(&str, u32, u32)) -> ! {
-    let (file, line, col) = *file_line_col;
-
+fn rust_panic_with_hook(
+    payload: &mut dyn BoxMeUp,
+    message: Option<&fmt::Arguments<'_>>,
+    location: &Location<'_>,
+) -> ! {
     let panics = update_panic_count(1);
 
     // If this is the third nested call (e.g., panics == 2, this is 0-indexed),
@@ -457,21 +449,23 @@ fn rust_panic_with_hook(payload: &mut dyn BoxMeUp,
     // process real quickly as we don't want to try calling it again as it'll
     // probably just panic again.
     if panics > 2 {
-        util::dumb_print(format_args!("thread panicked while processing \
-                                       panic. aborting.\n"));
+        util::dumb_print(format_args!(
+            "thread panicked while processing \
+                                       panic. aborting.\n"
+        ));
         unsafe { intrinsics::abort() }
     }
 
     unsafe {
-        let mut info = PanicInfo::internal_constructor(
-            message,
-            Location::internal_constructor(file, line, col),
-        );
+        let mut info = PanicInfo::internal_constructor(message, location);
         HOOK_LOCK.read();
         match HOOK {
-            // Some platforms know that printing to stderr won't ever actually
+            // Some platforms (like wasm) know that printing to stderr won't ever actually
             // print anything, and if that's the case we can skip the default
-            // hook.
+            // hook. Since string formatting happens lazily when calling `payload`
+            // methods, this means we avoid formatting the string at all!
+            // (The panic runtime might still call `payload.take_box()` though and trigger
+            // formatting.)
             Hook::Default if panic_output().is_none() => {}
             Hook::Default => {
                 info.set_payload(payload.get());
@@ -490,22 +484,25 @@ fn rust_panic_with_hook(payload: &mut dyn BoxMeUp,
         // have limited options. Currently our preference is to
         // just abort. In the future we may consider resuming
         // unwinding or otherwise exiting the thread cleanly.
-        util::dumb_print(format_args!("thread panicked while panicking. \
-                                       aborting.\n"));
+        util::dumb_print(format_args!(
+            "thread panicked while panicking. \
+                                       aborting.\n"
+        ));
         unsafe { intrinsics::abort() }
     }
 
     rust_panic(payload)
 }
 
-/// Shim around rust_panic. Called by resume_unwind.
-pub fn update_count_then_panic(msg: Box<dyn Any + Send>) -> ! {
+/// This is the entry point for `resume_unwind`.
+/// It just forwards the payload to the panic runtime.
+pub fn rust_panic_without_hook(payload: Box<dyn Any + Send>) -> ! {
     update_panic_count(1);
 
     struct RewrapBox(Box<dyn Any + Send>);
 
     unsafe impl BoxMeUp for RewrapBox {
-        fn box_me_up(&mut self) -> *mut (dyn Any + Send) {
+        fn take_box(&mut self) -> *mut (dyn Any + Send) {
             Box::into_raw(mem::replace(&mut self.0, Box::new(())))
         }
 
@@ -514,7 +511,7 @@ pub fn update_count_then_panic(msg: Box<dyn Any + Send>) -> ! {
         }
     }
 
-    rust_panic(&mut RewrapBox(msg))
+    rust_panic(&mut RewrapBox(payload))
 }
 
 /// An unmangled function (through `rustc_std_internal_symbol`) on which to slap

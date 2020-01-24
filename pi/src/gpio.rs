@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 
-use common::{IO_BASE, states};
+use crate::common::{IO_BASE, states};
+
 use volatile::prelude::*;
 use volatile::{Volatile, WriteVolatile, ReadVolatile, Reserved};
 

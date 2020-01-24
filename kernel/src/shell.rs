@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::str;
 
-use console::{kprint, kprintln, CONSOLE};
+use crate::console::{kprint, kprintln, CONSOLE};
 use stack_vec::StackVec;
 
 const MAX_CMDLEN : usize = 512;

@@ -1,8 +1,8 @@
-use atags::raw;
+use crate::atags::raw;
 use std::slice;
 use std::str;
 
-pub use atags::raw::{Core, Mem};
+pub use crate::atags::raw::{Core, Mem};
 
 /// An ATAG.
 #[derive(Debug, Copy, Clone)]

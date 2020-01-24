@@ -6,7 +6,8 @@ TTYWRITE ?= ttywrite
 PI_TTY ?= /dev/tty.SLAB_USBtoUART
 CCFLAGS ?= -Wall -O2 -nostdlib -nostartfiles -ffreestanding -pie -fpie
 LDFLAGS ?= --gc-sections -static -nostdlib -nostartfiles --no-dynamic-linker
-XARGO ?= CARGO_INCREMENTAL=0 RUST_TARGET_PATH="$(shell pwd)" xargo
+XARGO ?= RUST_TARGET_PATH="$(shell pwd)" cargo
+XARGO_FLAGS ?= -Z build-std=core,alloc
 CARGO ?= cargo
 
 LD_LAYOUT := ext/layout.ld
@@ -43,12 +44,12 @@ install: $(KERNEL).bin
 	$(TTYWRITE) -i $< $(PI_TTY)
 
 $(RUST_DEBUG_LIB): $(RUST_DEPS)
-	@echo "+ Building $@ [xargo]"
-	@$(XARGO) build --target=$(TARGET)
+	@echo "+ Building $@ [cargo -Z build-std]"
+	@$(XARGO) build $(XARGO_FLAGS) --target=$(TARGET)
 
 $(RUST_RELEASE_LIB): $(RUST_DEPS)
-	@echo "+ Building $@ [xargo --release]"
-	@$(XARGO) build --release --target=$(TARGET)
+	@echo "+ Building $@ [cargo --release -Z build-std]"
+	@$(XARGO) build --release $(XARGO_FLAGS) --target=$(TARGET)
 
 ifeq ($(DEBUG),1)
 $(RUST_LIB): $(RUST_DEBUG_LIB) | $(BUILD_DIR)

@@ -1,13 +1,13 @@
-use borrow::{Borrow, Cow};
-use fmt;
-use ops;
-use cmp;
-use hash::{Hash, Hasher};
-use rc::Rc;
-use sync::Arc;
+use crate::borrow::{Borrow, Cow};
+use crate::cmp;
+use crate::fmt;
+use crate::hash::{Hash, Hasher};
+use crate::ops;
+use crate::rc::Rc;
+use crate::sync::Arc;
 
-use sys::os_str::{Buf, Slice};
-use sys_common::{AsInner, IntoInner, FromInner};
+use crate::sys::os_str::{Buf, Slice};
+use crate::sys_common::{AsInner, FromInner, IntoInner};
 
 /// A type that can represent owned, mutable platform-native strings, but is
 /// cheaply inter-convertible with Rust strings.
@@ -24,7 +24,7 @@ use sys_common::{AsInner, IntoInner, FromInner};
 ///
 /// `OsString` and [`OsStr`] bridge this gap by simultaneously representing Rust
 /// and platform-native string values, and in particular allowing a Rust string
-/// to be converted into an "OS" string with no cost if possible.  A consequence
+/// to be converted into an "OS" string with no cost if possible. A consequence
 /// of this is that `OsString` instances are *not* `NUL` terminated; in order
 /// to pass to e.g., Unix system call, you should create a [`CStr`].
 ///
@@ -32,7 +32,7 @@ use sys_common::{AsInner, IntoInner, FromInner};
 /// in each pair are owned strings; the latter are borrowed
 /// references.
 ///
-/// Note, `OsString` and `OsStr` internally do not necessarily hold strings in
+/// Note, `OsString` and [`OsStr`] internally do not necessarily hold strings in
 /// the form native to the platform; While on Unix, strings are stored as a
 /// sequence of 8-bit values, on Windows, where strings are 16-bit value based
 /// as just discussed, strings are also actually stored as a sequence of 8-bit
@@ -78,7 +78,7 @@ use sys_common::{AsInner, IntoInner, FromInner};
 #[derive(Clone)]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct OsString {
-    inner: Buf
+    inner: Buf,
 }
 
 /// Borrowed reference to an OS string (see [`OsString`]).
@@ -97,8 +97,14 @@ pub struct OsString {
 /// [`String`]: ../string/struct.String.html
 /// [conversions]: index.html#conversions
 #[stable(feature = "rust1", since = "1.0.0")]
+// FIXME:
+// `OsStr::from_inner` current implementation relies
+// on `OsStr` being layout-compatible with `Slice`.
+// When attribute privacy is implemented, `OsStr` should be annotated as `#[repr(transparent)]`.
+// Anyway, `OsStr` representation and layout are considered implementation detail, are
+// not documented and must not be relied upon.
 pub struct OsStr {
-    inner: Slice
+    inner: Slice,
 }
 
 impl OsString {
@@ -151,7 +157,7 @@ impl OsString {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn into_string(self) -> Result<String, OsString> {
-        self.inner.into_string().map_err(|buf| OsString { inner: buf} )
+        self.inner.into_string().map_err(|buf| OsString { inner: buf })
     }
 
     /// Extends the string with the given [`&OsStr`] slice.
@@ -195,9 +201,7 @@ impl OsString {
     /// ```
     #[stable(feature = "osstring_simple_functions", since = "1.9.0")]
     pub fn with_capacity(capacity: usize) -> OsString {
-        OsString {
-            inner: Buf::with_capacity(capacity)
-        }
+        OsString { inner: Buf::with_capacity(capacity) }
     }
 
     /// Truncates the `OsString` to zero length.
@@ -227,7 +231,7 @@ impl OsString {
     /// ```
     /// use std::ffi::OsString;
     ///
-    /// let mut os_string = OsString::with_capacity(10);
+    /// let os_string = OsString::with_capacity(10);
     /// assert!(os_string.capacity() >= 10);
     /// ```
     #[stable(feature = "osstring_simple_functions", since = "1.9.0")]
@@ -259,7 +263,7 @@ impl OsString {
     /// already sufficient.
     ///
     /// Note that the allocator may give the collection more space than it
-    /// requests. Therefore capacity can not be relied upon to be precisely
+    /// requests. Therefore, capacity can not be relied upon to be precisely
     /// minimal. Prefer reserve if future insertions are expected.
     ///
     /// # Examples
@@ -321,7 +325,7 @@ impl OsString {
     /// assert!(s.capacity() >= 3);
     /// ```
     #[inline]
-    #[unstable(feature = "shrink_to", reason = "new API", issue="56431")]
+    #[unstable(feature = "shrink_to", reason = "new API", issue = "56431")]
     pub fn shrink_to(&mut self, min_capacity: usize) {
         self.inner.shrink_to(min_capacity)
     }
@@ -351,14 +355,16 @@ impl From<String> for OsString {
     /// Converts a [`String`] into a [`OsString`].
     ///
     /// The conversion copies the data, and includes an allocation on the heap.
+    ///
+    /// [`OsString`]: ../../std/ffi/struct.OsString.html
     fn from(s: String) -> OsString {
         OsString { inner: Buf::from_string(s) }
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<'a, T: ?Sized + AsRef<OsStr>> From<&'a T> for OsString {
-    fn from(s: &'a T) -> OsString {
+impl<T: ?Sized + AsRef<OsStr>> From<&T> for OsString {
+    fn from(s: &T) -> OsString {
         s.as_ref().to_os_string()
     }
 }
@@ -394,7 +400,7 @@ impl Default for OsString {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Debug for OsString {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, formatter)
     }
 }
@@ -421,8 +427,8 @@ impl PartialEq<OsString> for str {
 }
 
 #[stable(feature = "os_str_str_ref_eq", since = "1.29.0")]
-impl<'a> PartialEq<&'a str> for OsString {
-    fn eq(&self, other: &&'a str) -> bool {
+impl PartialEq<&str> for OsString {
+    fn eq(&self, other: &&str) -> bool {
         **self == **other
     }
 }
@@ -444,13 +450,21 @@ impl PartialOrd for OsString {
         (&**self).partial_cmp(&**other)
     }
     #[inline]
-    fn lt(&self, other: &OsString) -> bool { &**self < &**other }
+    fn lt(&self, other: &OsString) -> bool {
+        &**self < &**other
+    }
     #[inline]
-    fn le(&self, other: &OsString) -> bool { &**self <= &**other }
+    fn le(&self, other: &OsString) -> bool {
+        &**self <= &**other
+    }
     #[inline]
-    fn gt(&self, other: &OsString) -> bool { &**self > &**other }
+    fn gt(&self, other: &OsString) -> bool {
+        &**self > &**other
+    }
     #[inline]
-    fn ge(&self, other: &OsString) -> bool { &**self >= &**other }
+    fn ge(&self, other: &OsString) -> bool {
+        &**self >= &**other
+    }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -487,11 +501,13 @@ impl OsStr {
     ///
     /// let os_str = OsStr::new("foo");
     /// ```
+    #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn new<S: AsRef<OsStr> + ?Sized>(s: &S) -> &OsStr {
         s.as_ref()
     }
 
+    #[inline]
     fn from_inner(inner: &Slice) -> &OsStr {
         unsafe { &*(inner as *const Slice as *const OsStr) }
     }
@@ -563,7 +579,7 @@ impl OsStr {
     /// }
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn to_string_lossy(&self) -> Cow<str> {
+    pub fn to_string_lossy(&self) -> Cow<'_, str> {
         self.inner.to_string_lossy()
     }
 
@@ -599,6 +615,7 @@ impl OsStr {
     /// assert!(!os_str.is_empty());
     /// ```
     #[stable(feature = "osstring_simple_functions", since = "1.9.0")]
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.inner.inner.is_empty()
     }
@@ -608,7 +625,7 @@ impl OsStr {
     /// Note that this does **not** return the number of bytes in the string in
     /// OS string form.
     ///
-    /// The length returned is that of the underlying storage used by `OsStr`;
+    /// The length returned is that of the underlying storage used by `OsStr`.
     /// As discussed in the [`OsString`] introduction, [`OsString`] and `OsStr`
     /// store strings in a form best suited for cheap inter-conversion between
     /// native-platform and Rust string forms, which may differ significantly
@@ -650,14 +667,15 @@ impl OsStr {
     ///
     /// Note: it is *crucial* that this API is private, to avoid
     /// revealing the internal, platform-specific encodings.
+    #[inline]
     fn bytes(&self) -> &[u8] {
         unsafe { &*(&self.inner as *const _ as *const [u8]) }
     }
 }
 
 #[stable(feature = "box_from_os_str", since = "1.17.0")]
-impl<'a> From<&'a OsStr> for Box<OsStr> {
-    fn from(s: &'a OsStr) -> Box<OsStr> {
+impl From<&OsStr> for Box<OsStr> {
+    fn from(s: &OsStr) -> Box<OsStr> {
         let rw = Box::into_raw(s.inner.into_box()) as *mut OsStr;
         unsafe { Box::from_raw(rw) }
     }
@@ -665,10 +683,11 @@ impl<'a> From<&'a OsStr> for Box<OsStr> {
 
 #[stable(feature = "os_string_from_box", since = "1.18.0")]
 impl From<Box<OsStr>> for OsString {
-    /// Converts a `Box<OsStr>` into a `OsString` without copying or allocating.
+    /// Converts a [`Box`]`<`[`OsStr`]`>` into a `OsString` without copying or
+    /// allocating.
     ///
     /// [`Box`]: ../boxed/struct.Box.html
-    /// [`OsString`]: ../ffi/struct.OsString.html
+    /// [`OsStr`]: ../ffi/struct.OsStr.html
     fn from(boxed: Box<OsStr>) -> OsString {
         boxed.into_os_string()
     }
@@ -707,7 +726,7 @@ impl From<OsString> for Arc<OsStr> {
 }
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
-impl<'a> From<&'a OsStr> for Arc<OsStr> {
+impl From<&OsStr> for Arc<OsStr> {
     #[inline]
     fn from(s: &OsStr) -> Arc<OsStr> {
         let arc = s.inner.into_arc();
@@ -729,7 +748,7 @@ impl From<OsString> for Rc<OsStr> {
 }
 
 #[stable(feature = "shared_from_slice2", since = "1.24.0")]
-impl<'a> From<&'a OsStr> for Rc<OsStr> {
+impl From<&OsStr> for Rc<OsStr> {
     #[inline]
     fn from(s: &OsStr) -> Rc<OsStr> {
         let rc = s.inner.into_rc();
@@ -778,16 +797,17 @@ impl Default for Box<OsStr> {
 }
 
 #[stable(feature = "osstring_default", since = "1.9.0")]
-impl<'a> Default for &'a OsStr {
+impl Default for &OsStr {
     /// Creates an empty `OsStr`.
     #[inline]
-    fn default() -> &'a OsStr {
+    fn default() -> Self {
         OsStr::new("")
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl PartialEq for OsStr {
+    #[inline]
     fn eq(&self, other: &OsStr) -> bool {
         self.bytes().eq(other.bytes())
     }
@@ -795,6 +815,7 @@ impl PartialEq for OsStr {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl PartialEq<str> for OsStr {
+    #[inline]
     fn eq(&self, other: &str) -> bool {
         *self == *OsStr::new(other)
     }
@@ -802,6 +823,7 @@ impl PartialEq<str> for OsStr {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl PartialEq<OsStr> for str {
+    #[inline]
     fn eq(&self, other: &OsStr) -> bool {
         *other == *OsStr::new(self)
     }
@@ -817,13 +839,21 @@ impl PartialOrd for OsStr {
         self.bytes().partial_cmp(other.bytes())
     }
     #[inline]
-    fn lt(&self, other: &OsStr) -> bool { self.bytes().lt(other.bytes()) }
+    fn lt(&self, other: &OsStr) -> bool {
+        self.bytes().lt(other.bytes())
+    }
     #[inline]
-    fn le(&self, other: &OsStr) -> bool { self.bytes().le(other.bytes()) }
+    fn le(&self, other: &OsStr) -> bool {
+        self.bytes().le(other.bytes())
+    }
     #[inline]
-    fn gt(&self, other: &OsStr) -> bool { self.bytes().gt(other.bytes()) }
+    fn gt(&self, other: &OsStr) -> bool {
+        self.bytes().gt(other.bytes())
+    }
     #[inline]
-    fn ge(&self, other: &OsStr) -> bool { self.bytes().ge(other.bytes()) }
+    fn ge(&self, other: &OsStr) -> bool {
+        self.bytes().ge(other.bytes())
+    }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -840,7 +870,9 @@ impl PartialOrd<str> for OsStr {
 #[stable(feature = "rust1", since = "1.0.0")]
 impl Ord for OsStr {
     #[inline]
-    fn cmp(&self, other: &OsStr) -> cmp::Ordering { self.bytes().cmp(other.bytes()) }
+    fn cmp(&self, other: &OsStr) -> cmp::Ordering {
+        self.bytes().cmp(other.bytes())
+    }
 }
 
 macro_rules! impl_cmp {
@@ -848,13 +880,17 @@ macro_rules! impl_cmp {
         #[stable(feature = "cmp_os_str", since = "1.8.0")]
         impl<'a, 'b> PartialEq<$rhs> for $lhs {
             #[inline]
-            fn eq(&self, other: &$rhs) -> bool { <OsStr as PartialEq>::eq(self, other) }
+            fn eq(&self, other: &$rhs) -> bool {
+                <OsStr as PartialEq>::eq(self, other)
+            }
         }
 
         #[stable(feature = "cmp_os_str", since = "1.8.0")]
         impl<'a, 'b> PartialEq<$lhs> for $rhs {
             #[inline]
-            fn eq(&self, other: &$lhs) -> bool { <OsStr as PartialEq>::eq(self, other) }
+            fn eq(&self, other: &$lhs) -> bool {
+                <OsStr as PartialEq>::eq(self, other)
+            }
         }
 
         #[stable(feature = "cmp_os_str", since = "1.8.0")]
@@ -872,7 +908,7 @@ macro_rules! impl_cmp {
                 <OsStr as PartialOrd>::partial_cmp(self, other)
             }
         }
-    }
+    };
 }
 
 impl_cmp!(OsString, OsStr);
@@ -891,20 +927,22 @@ impl Hash for OsStr {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Debug for OsStr {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, formatter)
     }
 }
 
 impl OsStr {
-    pub(crate) fn display(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    pub(crate) fn display(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.inner, formatter)
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl Borrow<OsStr> for OsString {
-    fn borrow(&self) -> &OsStr { &self[..] }
+    fn borrow(&self) -> &OsStr {
+        &self[..]
+    }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -928,6 +966,7 @@ impl AsRef<OsStr> for OsStr {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl AsRef<OsStr> for OsString {
+    #[inline]
     fn as_ref(&self) -> &OsStr {
         self
     }
@@ -935,6 +974,7 @@ impl AsRef<OsStr> for OsString {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl AsRef<OsStr> for str {
+    #[inline]
     fn as_ref(&self) -> &OsStr {
         OsStr::from_inner(Slice::from_str(self))
     }
@@ -942,6 +982,7 @@ impl AsRef<OsStr> for str {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl AsRef<OsStr> for String {
+    #[inline]
     fn as_ref(&self) -> &OsStr {
         (&**self).as_ref()
     }
@@ -960,6 +1001,7 @@ impl IntoInner<Buf> for OsString {
 }
 
 impl AsInner<Slice> for OsStr {
+    #[inline]
     fn as_inner(&self) -> &Slice {
         &self.inner
     }
@@ -968,10 +1010,10 @@ impl AsInner<Slice> for OsStr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sys_common::{AsInner, IntoInner};
+    use crate::sys_common::{AsInner, IntoInner};
 
-    use rc::Rc;
-    use sync::Arc;
+    use crate::rc::Rc;
+    use crate::sync::Arc;
 
     #[test]
     fn test_os_string_with_capacity() {

@@ -1,6 +1,6 @@
 use alloc::alloc::{AllocErr, Layout};
 
-use allocator::util::*;
+use crate::allocator::util::*;
 
 /// A "bump" allocator: allocates memory by bumping a pointer; never frees.
 #[derive(Debug)]

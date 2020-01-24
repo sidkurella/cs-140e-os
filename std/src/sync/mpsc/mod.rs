@@ -1,3 +1,5 @@
+// ignore-tidy-filelength
+
 //! Multi-producer, single-consumer FIFO queue communication primitives.
 //!
 //! This module provides message-based communication over channels, concretely
@@ -114,7 +116,6 @@
 //! ```
 
 #![stable(feature = "rust1", since = "1.0.0")]
-#![allow(deprecated)] // for mpsc_select
 
 // A description of how Rust's channel implementation works
 //
@@ -261,36 +262,31 @@
 // believe that there is anything fundamental that needs to change about these
 // channels, however, in order to support a more efficient select().
 //
+// FIXME: Select is now removed, so these factors are ready to be cleaned up!
+//
 // # Conclusion
 //
 // And now that you've seen all the races that I found and attempted to fix,
 // here's the code for you to find some more!
 
-use sync::Arc;
-use error;
-use fmt;
-use mem;
-use cell::UnsafeCell;
-use time::{Duration, Instant};
-
-#[unstable(feature = "mpsc_select", issue = "27800")]
-pub use self::select::{Select, Handle};
-use self::select::StartResult;
-use self::select::StartResult::*;
-use self::blocking::SignalToken;
+use crate::cell::UnsafeCell;
+use crate::error;
+use crate::fmt;
+use crate::mem;
+use crate::sync::Arc;
+use crate::time::{Duration, Instant};
 
 mod blocking;
+mod mpsc_queue;
 mod oneshot;
-mod select;
 mod shared;
+mod spsc_queue;
 mod stream;
 mod sync;
-mod mpsc_queue;
-mod spsc_queue;
 
 mod cache_aligned;
 
-/// The receiving half of Rust's [`channel`][] (or [`sync_channel`]) type.
+/// The receiving half of Rust's [`channel`] (or [`sync_channel`]) type.
 /// This half can only be owned by one thread.
 ///
 /// Messages sent to the channel can be retrieved using [`recv`].
@@ -326,10 +322,10 @@ pub struct Receiver<T> {
 // The receiver port can be sent from place to place, so long as it
 // is not used to receive non-sendable things.
 #[stable(feature = "rust1", since = "1.0.0")]
-unsafe impl<T: Send> Send for Receiver<T> { }
+unsafe impl<T: Send> Send for Receiver<T> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<T> !Sync for Receiver<T> { }
+impl<T> !Sync for Receiver<T> {}
 
 /// An iterator over messages on a [`Receiver`], created by [`iter`].
 ///
@@ -363,7 +359,7 @@ impl<T> !Sync for Receiver<T> { }
 #[stable(feature = "rust1", since = "1.0.0")]
 #[derive(Debug)]
 pub struct Iter<'a, T: 'a> {
-    rx: &'a Receiver<T>
+    rx: &'a Receiver<T>,
 }
 
 /// An iterator that attempts to yield all pending values for a [`Receiver`],
@@ -408,7 +404,7 @@ pub struct Iter<'a, T: 'a> {
 #[stable(feature = "receiver_try_iter", since = "1.15.0")]
 #[derive(Debug)]
 pub struct TryIter<'a, T: 'a> {
-    rx: &'a Receiver<T>
+    rx: &'a Receiver<T>,
 }
 
 /// An owning iterator over messages on a [`Receiver`],
@@ -443,7 +439,7 @@ pub struct TryIter<'a, T: 'a> {
 #[stable(feature = "receiver_into_iter", since = "1.1.0")]
 #[derive(Debug)]
 pub struct IntoIter<T> {
-    rx: Receiver<T>
+    rx: Receiver<T>,
 }
 
 /// The sending-half of Rust's asynchronous [`channel`] type. This half can only be
@@ -486,10 +482,10 @@ pub struct Sender<T> {
 // The send port can be sent from place to place, so long as it
 // is not used to send non-sendable things.
 #[stable(feature = "rust1", since = "1.0.0")]
-unsafe impl<T: Send> Send for Sender<T> { }
+unsafe impl<T: Send> Send for Sender<T> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<T> !Sync for Sender<T> { }
+impl<T> !Sync for Sender<T> {}
 
 /// The sending-half of Rust's synchronous [`sync_channel`] type.
 ///
@@ -562,7 +558,7 @@ pub struct SendError<T>(#[stable(feature = "rust1", since = "1.0.0")] pub T);
 /// An error returned from the [`recv`] function on a [`Receiver`].
 ///
 /// The [`recv`] operation can only fail if the sending half of a
-/// [`channel`][`channel`] (or [`sync_channel`]) is disconnected, implying that no further
+/// [`channel`] (or [`sync_channel`]) is disconnected, implying that no further
 /// messages will ever be received.
 ///
 /// [`recv`]: struct.Receiver.html#method.recv
@@ -776,9 +772,7 @@ pub fn sync_channel<T>(bound: usize) -> (SyncSender<T>, Receiver<T>) {
 
 impl<T> Sender<T> {
     fn new(inner: Flavor<T>) -> Sender<T> {
-        Sender {
-            inner: UnsafeCell::new(inner),
-        }
+        Sender { inner: UnsafeCell::new(inner) }
     }
 
     /// Attempts to send a value on this channel, returning it back if it could
@@ -789,7 +783,7 @@ impl<T> Sender<T> {
     /// where the corresponding receiver has already been deallocated. Note
     /// that a return value of [`Err`] means that the data will never be
     /// received, but a return value of [`Ok`] does *not* mean that the data
-    /// will be received.  It is possible for the corresponding receiver to
+    /// will be received. It is possible for the corresponding receiver to
     /// hang up immediately after this function returns [`Ok`].
     ///
     /// [`Err`]: ../../../std/result/enum.Result.html#variant.Err
@@ -860,8 +854,7 @@ impl<T> Clone for Sender<T> {
                     let guard = a.postinit_lock();
                     let rx = Receiver::new(Flavor::Shared(a.clone()));
                     let sleeper = match p.upgrade(rx) {
-                        oneshot::UpSuccess |
-                        oneshot::UpDisconnected => None,
+                        oneshot::UpSuccess | oneshot::UpDisconnected => None,
                         oneshot::UpWoke(task) => Some(task),
                     };
                     a.inherit_blocker(sleeper, guard);
@@ -874,8 +867,7 @@ impl<T> Clone for Sender<T> {
                     let guard = a.postinit_lock();
                     let rx = Receiver::new(Flavor::Shared(a.clone()));
                     let sleeper = match p.upgrade(rx) {
-                        stream::UpSuccess |
-                        stream::UpDisconnected => None,
+                        stream::UpSuccess | stream::UpDisconnected => None,
                         stream::UpWoke(task) => Some(task),
                     };
                     a.inherit_blocker(sleeper, guard);
@@ -911,7 +903,7 @@ impl<T> Drop for Sender<T> {
 
 #[stable(feature = "mpsc_debug", since = "1.8.0")]
 impl<T> fmt::Debug for Sender<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Sender").finish()
     }
 }
@@ -1002,7 +994,7 @@ impl<T> SyncSender<T> {
     /// thread::spawn(move || {
     ///     // This will return an error and send
     ///     // no message if the buffer is full
-    ///     sync_sender2.try_send(3).is_err();
+    ///     let _ = sync_sender2.try_send(3);
     /// });
     ///
     /// let mut msg;
@@ -1041,7 +1033,7 @@ impl<T> Drop for SyncSender<T> {
 
 #[stable(feature = "mpsc_debug", since = "1.8.0")]
 impl<T> fmt::Debug for SyncSender<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SyncSender").finish()
     }
 }
@@ -1082,48 +1074,31 @@ impl<T> Receiver<T> {
     pub fn try_recv(&self) -> Result<T, TryRecvError> {
         loop {
             let new_port = match *unsafe { self.inner() } {
-                Flavor::Oneshot(ref p) => {
-                    match p.try_recv() {
-                        Ok(t) => return Ok(t),
-                        Err(oneshot::Empty) => return Err(TryRecvError::Empty),
-                        Err(oneshot::Disconnected) => {
-                            return Err(TryRecvError::Disconnected)
-                        }
-                        Err(oneshot::Upgraded(rx)) => rx,
-                    }
-                }
-                Flavor::Stream(ref p) => {
-                    match p.try_recv() {
-                        Ok(t) => return Ok(t),
-                        Err(stream::Empty) => return Err(TryRecvError::Empty),
-                        Err(stream::Disconnected) => {
-                            return Err(TryRecvError::Disconnected)
-                        }
-                        Err(stream::Upgraded(rx)) => rx,
-                    }
-                }
-                Flavor::Shared(ref p) => {
-                    match p.try_recv() {
-                        Ok(t) => return Ok(t),
-                        Err(shared::Empty) => return Err(TryRecvError::Empty),
-                        Err(shared::Disconnected) => {
-                            return Err(TryRecvError::Disconnected)
-                        }
-                    }
-                }
-                Flavor::Sync(ref p) => {
-                    match p.try_recv() {
-                        Ok(t) => return Ok(t),
-                        Err(sync::Empty) => return Err(TryRecvError::Empty),
-                        Err(sync::Disconnected) => {
-                            return Err(TryRecvError::Disconnected)
-                        }
-                    }
-                }
+                Flavor::Oneshot(ref p) => match p.try_recv() {
+                    Ok(t) => return Ok(t),
+                    Err(oneshot::Empty) => return Err(TryRecvError::Empty),
+                    Err(oneshot::Disconnected) => return Err(TryRecvError::Disconnected),
+                    Err(oneshot::Upgraded(rx)) => rx,
+                },
+                Flavor::Stream(ref p) => match p.try_recv() {
+                    Ok(t) => return Ok(t),
+                    Err(stream::Empty) => return Err(TryRecvError::Empty),
+                    Err(stream::Disconnected) => return Err(TryRecvError::Disconnected),
+                    Err(stream::Upgraded(rx)) => rx,
+                },
+                Flavor::Shared(ref p) => match p.try_recv() {
+                    Ok(t) => return Ok(t),
+                    Err(shared::Empty) => return Err(TryRecvError::Empty),
+                    Err(shared::Disconnected) => return Err(TryRecvError::Disconnected),
+                },
+                Flavor::Sync(ref p) => match p.try_recv() {
+                    Ok(t) => return Ok(t),
+                    Err(sync::Empty) => return Err(TryRecvError::Empty),
+                    Err(sync::Disconnected) => return Err(TryRecvError::Disconnected),
+                },
             };
             unsafe {
-                mem::swap(self.inner_mut(),
-                          new_port.inner_mut());
+                mem::swap(self.inner_mut(), new_port.inner_mut());
             }
         }
     }
@@ -1133,7 +1108,7 @@ impl<T> Receiver<T> {
     ///
     /// This function will always block the current thread if there is no data
     /// available and it's possible for more data to be sent. Once a message is
-    /// sent to the corresponding [`Sender`][] (or [`SyncSender`]), then this
+    /// sent to the corresponding [`Sender`] (or [`SyncSender`]), then this
     /// receiver will wake up and return that message.
     ///
     /// If the corresponding [`Sender`] has disconnected, or it disconnects while
@@ -1189,29 +1164,23 @@ impl<T> Receiver<T> {
     pub fn recv(&self) -> Result<T, RecvError> {
         loop {
             let new_port = match *unsafe { self.inner() } {
-                Flavor::Oneshot(ref p) => {
-                    match p.recv(None) {
-                        Ok(t) => return Ok(t),
-                        Err(oneshot::Disconnected) => return Err(RecvError),
-                        Err(oneshot::Upgraded(rx)) => rx,
-                        Err(oneshot::Empty) => unreachable!(),
-                    }
-                }
-                Flavor::Stream(ref p) => {
-                    match p.recv(None) {
-                        Ok(t) => return Ok(t),
-                        Err(stream::Disconnected) => return Err(RecvError),
-                        Err(stream::Upgraded(rx)) => rx,
-                        Err(stream::Empty) => unreachable!(),
-                    }
-                }
-                Flavor::Shared(ref p) => {
-                    match p.recv(None) {
-                        Ok(t) => return Ok(t),
-                        Err(shared::Disconnected) => return Err(RecvError),
-                        Err(shared::Empty) => unreachable!(),
-                    }
-                }
+                Flavor::Oneshot(ref p) => match p.recv(None) {
+                    Ok(t) => return Ok(t),
+                    Err(oneshot::Disconnected) => return Err(RecvError),
+                    Err(oneshot::Upgraded(rx)) => rx,
+                    Err(oneshot::Empty) => unreachable!(),
+                },
+                Flavor::Stream(ref p) => match p.recv(None) {
+                    Ok(t) => return Ok(t),
+                    Err(stream::Disconnected) => return Err(RecvError),
+                    Err(stream::Upgraded(rx)) => rx,
+                    Err(stream::Empty) => unreachable!(),
+                },
+                Flavor::Shared(ref p) => match p.recv(None) {
+                    Ok(t) => return Ok(t),
+                    Err(shared::Disconnected) => return Err(RecvError),
+                    Err(shared::Empty) => unreachable!(),
+                },
                 Flavor::Sync(ref p) => return p.recv(None).map_err(|_| RecvError),
             };
             unsafe {
@@ -1225,7 +1194,7 @@ impl<T> Receiver<T> {
     ///
     /// This function will always block the current thread if there is no data
     /// available and it's possible for more data to be sent. Once a message is
-    /// sent to the corresponding [`Sender`][] (or [`SyncSender`]), then this
+    /// sent to the corresponding [`Sender`] (or [`SyncSender`]), then this
     /// receiver will wake up and return that message.
     ///
     /// If the corresponding [`Sender`] has disconnected, or it disconnects while
@@ -1326,7 +1295,7 @@ impl<T> Receiver<T> {
     ///
     /// This function will always block the current thread if there is no data
     /// available and it's possible for more data to be sent. Once a message is
-    /// sent to the corresponding [`Sender`][] (or [`SyncSender`]), then this
+    /// sent to the corresponding [`Sender`] (or [`SyncSender`]), then this
     /// receiver will wake up and return that message.
     ///
     /// If the corresponding [`Sender`] has disconnected, or it disconnects while
@@ -1387,36 +1356,28 @@ impl<T> Receiver<T> {
 
         loop {
             let port_or_empty = match *unsafe { self.inner() } {
-                Flavor::Oneshot(ref p) => {
-                    match p.recv(Some(deadline)) {
-                        Ok(t) => return Ok(t),
-                        Err(oneshot::Disconnected) => return Err(Disconnected),
-                        Err(oneshot::Upgraded(rx)) => Some(rx),
-                        Err(oneshot::Empty) => None,
-                    }
-                }
-                Flavor::Stream(ref p) => {
-                    match p.recv(Some(deadline)) {
-                        Ok(t) => return Ok(t),
-                        Err(stream::Disconnected) => return Err(Disconnected),
-                        Err(stream::Upgraded(rx)) => Some(rx),
-                        Err(stream::Empty) => None,
-                    }
-                }
-                Flavor::Shared(ref p) => {
-                    match p.recv(Some(deadline)) {
-                        Ok(t) => return Ok(t),
-                        Err(shared::Disconnected) => return Err(Disconnected),
-                        Err(shared::Empty) => None,
-                    }
-                }
-                Flavor::Sync(ref p) => {
-                    match p.recv(Some(deadline)) {
-                        Ok(t) => return Ok(t),
-                        Err(sync::Disconnected) => return Err(Disconnected),
-                        Err(sync::Empty) => None,
-                    }
-                }
+                Flavor::Oneshot(ref p) => match p.recv(Some(deadline)) {
+                    Ok(t) => return Ok(t),
+                    Err(oneshot::Disconnected) => return Err(Disconnected),
+                    Err(oneshot::Upgraded(rx)) => Some(rx),
+                    Err(oneshot::Empty) => None,
+                },
+                Flavor::Stream(ref p) => match p.recv(Some(deadline)) {
+                    Ok(t) => return Ok(t),
+                    Err(stream::Disconnected) => return Err(Disconnected),
+                    Err(stream::Upgraded(rx)) => Some(rx),
+                    Err(stream::Empty) => None,
+                },
+                Flavor::Shared(ref p) => match p.recv(Some(deadline)) {
+                    Ok(t) => return Ok(t),
+                    Err(shared::Disconnected) => return Err(Disconnected),
+                    Err(shared::Empty) => None,
+                },
+                Flavor::Sync(ref p) => match p.recv(Some(deadline)) {
+                    Ok(t) => return Ok(t),
+                    Err(sync::Disconnected) => return Err(Disconnected),
+                    Err(sync::Empty) => None,
+                },
             };
 
             if let Some(new_port) = port_or_empty {
@@ -1460,7 +1421,7 @@ impl<T> Receiver<T> {
     /// assert_eq!(iter.next(), None);
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    pub fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         Iter { rx: self }
     }
 
@@ -1503,81 +1464,8 @@ impl<T> Receiver<T> {
     /// assert_eq!(iter.next(), None);
     /// ```
     #[stable(feature = "receiver_try_iter", since = "1.15.0")]
-    pub fn try_iter(&self) -> TryIter<T> {
+    pub fn try_iter(&self) -> TryIter<'_, T> {
         TryIter { rx: self }
-    }
-
-}
-
-impl<T> select::Packet for Receiver<T> {
-    fn can_recv(&self) -> bool {
-        loop {
-            let new_port = match *unsafe { self.inner() } {
-                Flavor::Oneshot(ref p) => {
-                    match p.can_recv() {
-                        Ok(ret) => return ret,
-                        Err(upgrade) => upgrade,
-                    }
-                }
-                Flavor::Stream(ref p) => {
-                    match p.can_recv() {
-                        Ok(ret) => return ret,
-                        Err(upgrade) => upgrade,
-                    }
-                }
-                Flavor::Shared(ref p) => return p.can_recv(),
-                Flavor::Sync(ref p) => return p.can_recv(),
-            };
-            unsafe {
-                mem::swap(self.inner_mut(),
-                          new_port.inner_mut());
-            }
-        }
-    }
-
-    fn start_selection(&self, mut token: SignalToken) -> StartResult {
-        loop {
-            let (t, new_port) = match *unsafe { self.inner() } {
-                Flavor::Oneshot(ref p) => {
-                    match p.start_selection(token) {
-                        oneshot::SelSuccess => return Installed,
-                        oneshot::SelCanceled => return Abort,
-                        oneshot::SelUpgraded(t, rx) => (t, rx),
-                    }
-                }
-                Flavor::Stream(ref p) => {
-                    match p.start_selection(token) {
-                        stream::SelSuccess => return Installed,
-                        stream::SelCanceled => return Abort,
-                        stream::SelUpgraded(t, rx) => (t, rx),
-                    }
-                }
-                Flavor::Shared(ref p) => return p.start_selection(token),
-                Flavor::Sync(ref p) => return p.start_selection(token),
-            };
-            token = t;
-            unsafe {
-                mem::swap(self.inner_mut(), new_port.inner_mut());
-            }
-        }
-    }
-
-    fn abort_selection(&self) -> bool {
-        let mut was_upgrade = false;
-        loop {
-            let result = match *unsafe { self.inner() } {
-                Flavor::Oneshot(ref p) => p.abort_selection(),
-                Flavor::Stream(ref p) => p.abort_selection(was_upgrade),
-                Flavor::Shared(ref p) => return p.abort_selection(was_upgrade),
-                Flavor::Sync(ref p) => return p.abort_selection(),
-            };
-            let new_port = match result { Ok(b) => return b, Err(p) => p };
-            was_upgrade = true;
-            unsafe {
-                mem::swap(self.inner_mut(),
-                          new_port.inner_mut());
-            }
-        }
     }
 }
 
@@ -1585,14 +1473,18 @@ impl<T> select::Packet for Receiver<T> {
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = T;
 
-    fn next(&mut self) -> Option<T> { self.rx.recv().ok() }
+    fn next(&mut self) -> Option<T> {
+        self.rx.recv().ok()
+    }
 }
 
 #[stable(feature = "receiver_try_iter", since = "1.15.0")]
 impl<'a, T> Iterator for TryIter<'a, T> {
     type Item = T;
 
-    fn next(&mut self) -> Option<T> { self.rx.try_recv().ok() }
+    fn next(&mut self) -> Option<T> {
+        self.rx.try_recv().ok()
+    }
 }
 
 #[stable(feature = "receiver_into_iter", since = "1.1.0")]
@@ -1600,17 +1492,21 @@ impl<'a, T> IntoIterator for &'a Receiver<T> {
     type Item = T;
     type IntoIter = Iter<'a, T>;
 
-    fn into_iter(self) -> Iter<'a, T> { self.iter() }
+    fn into_iter(self) -> Iter<'a, T> {
+        self.iter()
+    }
 }
 
 #[stable(feature = "receiver_into_iter", since = "1.1.0")]
 impl<T> Iterator for IntoIter<T> {
     type Item = T;
-    fn next(&mut self) -> Option<T> { self.rx.recv().ok() }
+    fn next(&mut self) -> Option<T> {
+        self.rx.recv().ok()
+    }
 }
 
 #[stable(feature = "receiver_into_iter", since = "1.1.0")]
-impl <T> IntoIterator for Receiver<T> {
+impl<T> IntoIterator for Receiver<T> {
     type Item = T;
     type IntoIter = IntoIter<T>;
 
@@ -1633,39 +1529,36 @@ impl<T> Drop for Receiver<T> {
 
 #[stable(feature = "mpsc_debug", since = "1.8.0")]
 impl<T> fmt::Debug for Receiver<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Receiver").finish()
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> fmt::Debug for SendError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         "SendError(..)".fmt(f)
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> fmt::Display for SendError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         "sending on a closed channel".fmt(f)
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T: Send> error::Error for SendError<T> {
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         "sending on a closed channel"
-    }
-
-    fn cause(&self) -> Option<&dyn error::Error> {
-        None
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> fmt::Debug for TrySendError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             TrySendError::Full(..) => "Full(..)".fmt(f),
             TrySendError::Disconnected(..) => "Disconnected(..)".fmt(f),
@@ -1675,34 +1568,22 @@ impl<T> fmt::Debug for TrySendError<T> {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> fmt::Display for TrySendError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            TrySendError::Full(..) => {
-                "sending on a full channel".fmt(f)
-            }
-            TrySendError::Disconnected(..) => {
-                "sending on a closed channel".fmt(f)
-            }
+            TrySendError::Full(..) => "sending on a full channel".fmt(f),
+            TrySendError::Disconnected(..) => "sending on a closed channel".fmt(f),
         }
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T: Send> error::Error for TrySendError<T> {
-
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         match *self {
-            TrySendError::Full(..) => {
-                "sending on a full channel"
-            }
-            TrySendError::Disconnected(..) => {
-                "sending on a closed channel"
-            }
+            TrySendError::Full(..) => "sending on a full channel",
+            TrySendError::Disconnected(..) => "sending on a closed channel",
         }
-    }
-
-    fn cause(&self) -> Option<&dyn error::Error> {
-        None
     }
 }
 
@@ -1717,53 +1598,37 @@ impl<T> From<SendError<T>> for TrySendError<T> {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Display for RecvError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         "receiving on a closed channel".fmt(f)
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl error::Error for RecvError {
-
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         "receiving on a closed channel"
-    }
-
-    fn cause(&self) -> Option<&dyn error::Error> {
-        None
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Display for TryRecvError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            TryRecvError::Empty => {
-                "receiving on an empty channel".fmt(f)
-            }
-            TryRecvError::Disconnected => {
-                "receiving on a closed channel".fmt(f)
-            }
+            TryRecvError::Empty => "receiving on an empty channel".fmt(f),
+            TryRecvError::Disconnected => "receiving on a closed channel".fmt(f),
         }
     }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl error::Error for TryRecvError {
-
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         match *self {
-            TryRecvError::Empty => {
-                "receiving on an empty channel"
-            }
-            TryRecvError::Disconnected => {
-                "receiving on a closed channel"
-            }
+            TryRecvError::Empty => "receiving on an empty channel",
+            TryRecvError::Disconnected => "receiving on a closed channel",
         }
-    }
-
-    fn cause(&self) -> Option<&dyn error::Error> {
-        None
     }
 }
 
@@ -1778,33 +1643,22 @@ impl From<RecvError> for TryRecvError {
 
 #[stable(feature = "mpsc_recv_timeout_error", since = "1.15.0")]
 impl fmt::Display for RecvTimeoutError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            RecvTimeoutError::Timeout => {
-                "timed out waiting on channel".fmt(f)
-            }
-            RecvTimeoutError::Disconnected => {
-                "channel is empty and sending half is closed".fmt(f)
-            }
+            RecvTimeoutError::Timeout => "timed out waiting on channel".fmt(f),
+            RecvTimeoutError::Disconnected => "channel is empty and sending half is closed".fmt(f),
         }
     }
 }
 
 #[stable(feature = "mpsc_recv_timeout_error", since = "1.15.0")]
 impl error::Error for RecvTimeoutError {
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         match *self {
-            RecvTimeoutError::Timeout => {
-                "timed out waiting on channel"
-            }
-            RecvTimeoutError::Disconnected => {
-                "channel is empty and sending half is closed"
-            }
+            RecvTimeoutError::Timeout => "timed out waiting on channel",
+            RecvTimeoutError::Disconnected => "channel is empty and sending half is closed",
         }
-    }
-
-    fn cause(&self) -> Option<&dyn error::Error> {
-        None
     }
 }
 
@@ -1819,10 +1673,10 @@ impl From<RecvError> for RecvTimeoutError {
 
 #[cfg(all(test, not(target_os = "emscripten")))]
 mod tests {
-    use env;
     use super::*;
-    use thread;
-    use time::{Duration, Instant};
+    use crate::env;
+    use crate::thread;
+    use crate::time::{Duration, Instant};
 
     pub fn stress_factor() -> usize {
         match env::var("RUST_TEST_STRESS") {
@@ -1865,7 +1719,7 @@ mod tests {
     #[test]
     fn smoke_threads() {
         let (tx, rx) = channel::<i32>();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             tx.send(1).unwrap();
         });
         assert_eq!(rx.recv().unwrap(), 1);
@@ -1897,7 +1751,7 @@ mod tests {
     #[test]
     fn port_gone_concurrent() {
         let (tx, rx) = channel::<i32>();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx.recv().unwrap();
         });
         while tx.send(1).is_ok() {}
@@ -1907,7 +1761,7 @@ mod tests {
     fn port_gone_concurrent_shared() {
         let (tx, rx) = channel::<i32>();
         let tx2 = tx.clone();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx.recv().unwrap();
         });
         while tx.send(1).is_ok() && tx2.send(1).is_ok() {}
@@ -1932,7 +1786,7 @@ mod tests {
     #[test]
     fn chan_gone_concurrent() {
         let (tx, rx) = channel::<i32>();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             tx.send(1).unwrap();
             tx.send(1).unwrap();
         });
@@ -1942,13 +1796,15 @@ mod tests {
     #[test]
     fn stress() {
         let (tx, rx) = channel::<i32>();
-        let t = thread::spawn(move|| {
-            for _ in 0..10000 { tx.send(1).unwrap(); }
+        let t = thread::spawn(move || {
+            for _ in 0..10000 {
+                tx.send(1).unwrap();
+            }
         });
         for _ in 0..10000 {
             assert_eq!(rx.recv().unwrap(), 1);
         }
-        t.join().ok().unwrap();
+        t.join().ok().expect("thread panicked");
     }
 
     #[test]
@@ -1957,7 +1813,7 @@ mod tests {
         const NTHREADS: u32 = 8;
         let (tx, rx) = channel::<i32>();
 
-        let t = thread::spawn(move|| {
+        let t = thread::spawn(move || {
             for _ in 0..AMT * NTHREADS {
                 assert_eq!(rx.recv().unwrap(), 1);
             }
@@ -1969,38 +1825,40 @@ mod tests {
 
         for _ in 0..NTHREADS {
             let tx = tx.clone();
-            thread::spawn(move|| {
-                for _ in 0..AMT { tx.send(1).unwrap(); }
+            thread::spawn(move || {
+                for _ in 0..AMT {
+                    tx.send(1).unwrap();
+                }
             });
         }
         drop(tx);
-        t.join().ok().unwrap();
+        t.join().ok().expect("thread panicked");
     }
 
     #[test]
     fn send_from_outside_runtime() {
         let (tx1, rx1) = channel::<()>();
         let (tx2, rx2) = channel::<i32>();
-        let t1 = thread::spawn(move|| {
+        let t1 = thread::spawn(move || {
             tx1.send(()).unwrap();
             for _ in 0..40 {
                 assert_eq!(rx2.recv().unwrap(), 1);
             }
         });
         rx1.recv().unwrap();
-        let t2 = thread::spawn(move|| {
+        let t2 = thread::spawn(move || {
             for _ in 0..40 {
                 tx2.send(1).unwrap();
             }
         });
-        t1.join().ok().unwrap();
-        t2.join().ok().unwrap();
+        t1.join().ok().expect("thread panicked");
+        t2.join().ok().expect("thread panicked");
     }
 
     #[test]
     fn recv_from_outside_runtime() {
         let (tx, rx) = channel::<i32>();
-        let t = thread::spawn(move|| {
+        let t = thread::spawn(move || {
             for _ in 0..40 {
                 assert_eq!(rx.recv().unwrap(), 1);
             }
@@ -2008,23 +1866,23 @@ mod tests {
         for _ in 0..40 {
             tx.send(1).unwrap();
         }
-        t.join().ok().unwrap();
+        t.join().ok().expect("thread panicked");
     }
 
     #[test]
     fn no_runtime() {
         let (tx1, rx1) = channel::<i32>();
         let (tx2, rx2) = channel::<i32>();
-        let t1 = thread::spawn(move|| {
+        let t1 = thread::spawn(move || {
             assert_eq!(rx1.recv().unwrap(), 1);
             tx2.send(2).unwrap();
         });
-        let t2 = thread::spawn(move|| {
+        let t2 = thread::spawn(move || {
             tx1.send(1).unwrap();
             assert_eq!(rx2.recv().unwrap(), 2);
         });
-        t1.join().ok().unwrap();
-        t2.join().ok().unwrap();
+        t1.join().ok().expect("thread panicked");
+        t2.join().ok().expect("thread panicked");
     }
 
     #[test]
@@ -2052,11 +1910,12 @@ mod tests {
     #[test]
     fn oneshot_single_thread_recv_chan_close() {
         // Receiving on a closed chan will panic
-        let res = thread::spawn(move|| {
+        let res = thread::spawn(move || {
             let (tx, rx) = channel::<i32>();
             drop(tx);
             rx.recv().unwrap();
-        }).join();
+        })
+        .join();
         // What is our res?
         assert!(res.is_err());
     }
@@ -2121,7 +1980,7 @@ mod tests {
     #[test]
     fn oneshot_multi_task_recv_then_send() {
         let (tx, rx) = channel::<Box<i32>>();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             assert!(*rx.recv().unwrap() == 10);
         });
 
@@ -2131,12 +1990,13 @@ mod tests {
     #[test]
     fn oneshot_multi_task_recv_then_close() {
         let (tx, rx) = channel::<Box<i32>>();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             drop(tx);
         });
-        let res = thread::spawn(move|| {
+        let res = thread::spawn(move || {
             assert!(*rx.recv().unwrap() == 10);
-        }).join();
+        })
+        .join();
         assert!(res.is_err());
     }
 
@@ -2144,7 +2004,7 @@ mod tests {
     fn oneshot_multi_thread_close_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = channel::<i32>();
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 drop(rx);
             });
             drop(tx);
@@ -2155,12 +2015,13 @@ mod tests {
     fn oneshot_multi_thread_send_close_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = channel::<i32>();
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 drop(rx);
             });
-            let _ = thread::spawn(move|| {
+            let _ = thread::spawn(move || {
                 tx.send(1).unwrap();
-            }).join();
+            })
+            .join();
         }
     }
 
@@ -2168,14 +2029,15 @@ mod tests {
     fn oneshot_multi_thread_recv_close_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = channel::<i32>();
-            thread::spawn(move|| {
-                let res = thread::spawn(move|| {
+            thread::spawn(move || {
+                let res = thread::spawn(move || {
                     rx.recv().unwrap();
-                }).join();
+                })
+                .join();
                 assert!(res.is_err());
             });
-            let _t = thread::spawn(move|| {
-                thread::spawn(move|| {
+            let _t = thread::spawn(move || {
+                thread::spawn(move || {
                     drop(tx);
                 });
             });
@@ -2186,7 +2048,7 @@ mod tests {
     fn oneshot_multi_thread_send_recv_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = channel::<Box<isize>>();
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 tx.send(box 10).unwrap();
             });
             assert!(*rx.recv().unwrap() == 10);
@@ -2202,18 +2064,22 @@ mod tests {
             recv(rx, 0);
 
             fn send(tx: Sender<Box<i32>>, i: i32) {
-                if i == 10 { return }
+                if i == 10 {
+                    return;
+                }
 
-                thread::spawn(move|| {
+                thread::spawn(move || {
                     tx.send(box i).unwrap();
                     send(tx, i + 1);
                 });
             }
 
             fn recv(rx: Receiver<Box<i32>>, i: i32) {
-                if i == 10 { return }
+                if i == 10 {
+                    return;
+                }
 
-                thread::spawn(move|| {
+                thread::spawn(move || {
                     assert!(*rx.recv().unwrap() == i);
                     recv(rx, i + 1);
                 });
@@ -2222,6 +2088,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn oneshot_single_thread_recv_timeout() {
         let (tx, rx) = channel();
         tx.send(()).unwrap();
@@ -2232,6 +2099,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn stress_recv_timeout_two_threads() {
         let (tx, rx) = channel();
         let stress = stress_factor() + 100;
@@ -2262,6 +2130,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn recv_timeout_upgrade() {
         let (tx, rx) = channel::<()>();
         let timeout = Duration::from_millis(1);
@@ -2273,6 +2142,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn stress_recv_timeout_shared() {
         let (tx, rx) = channel();
         let stress = stress_factor() + 100;
@@ -2303,11 +2173,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn very_long_recv_timeout_wont_panic() {
         let (tx, rx) = channel::<()>();
-        let join_handle = thread::spawn(move || {
-            rx.recv_timeout(Duration::from_secs(u64::max_value()))
-        });
+        let join_handle =
+            thread::spawn(move || rx.recv_timeout(Duration::from_secs(u64::max_value())));
         thread::sleep(Duration::from_secs(1));
         assert!(tx.send(()).is_ok());
         assert_eq!(join_handle.join().unwrap(), Ok(()));
@@ -2317,22 +2187,29 @@ mod tests {
     fn recv_a_lot() {
         // Regression test that we don't run out of stack in scheduler context
         let (tx, rx) = channel();
-        for _ in 0..10000 { tx.send(()).unwrap(); }
-        for _ in 0..10000 { rx.recv().unwrap(); }
+        for _ in 0..10000 {
+            tx.send(()).unwrap();
+        }
+        for _ in 0..10000 {
+            rx.recv().unwrap();
+        }
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn shared_recv_timeout() {
         let (tx, rx) = channel();
         let total = 5;
         for _ in 0..total {
             let tx = tx.clone();
-            thread::spawn(move|| {
+            thread::spawn(move || {
                 tx.send(()).unwrap();
             });
         }
 
-        for _ in 0..total { rx.recv().unwrap(); }
+        for _ in 0..total {
+            rx.recv().unwrap();
+        }
 
         assert_eq!(rx.recv_timeout(Duration::from_millis(1)), Err(RecvTimeoutError::Timeout));
         tx.send(()).unwrap();
@@ -2345,7 +2222,7 @@ mod tests {
         let total = stress_factor() + 100;
         for _ in 0..total {
             let tx = tx.clone();
-            thread::spawn(move|| {
+            thread::spawn(move || {
                 tx.send(()).unwrap();
             });
         }
@@ -2360,7 +2237,7 @@ mod tests {
         let (tx, rx) = channel::<i32>();
         let (total_tx, total_rx) = channel::<i32>();
 
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             let mut acc = 0;
             for x in rx.iter() {
                 acc += x;
@@ -2380,7 +2257,7 @@ mod tests {
         let (tx, rx) = channel::<i32>();
         let (count_tx, count_rx) = channel();
 
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             let mut count = 0;
             for x in rx.iter() {
                 if count >= 3 {
@@ -2406,7 +2283,7 @@ mod tests {
         let (response_tx, response_rx) = channel();
 
         // Request `x`s until we have `6`.
-        let t = thread::spawn(move|| {
+        let t = thread::spawn(move || {
             let mut count = 0;
             loop {
                 for x in response_rx.try_iter() {
@@ -2431,11 +2308,11 @@ mod tests {
     #[test]
     fn test_recv_into_iter_owned() {
         let mut iter = {
-          let (tx, rx) = channel::<i32>();
-          tx.send(1).unwrap();
-          tx.send(2).unwrap();
+            let (tx, rx) = channel::<i32>();
+            tx.send(1).unwrap();
+            tx.send(2).unwrap();
 
-          rx.into_iter()
+            rx.into_iter()
         };
         assert_eq!(iter.next().unwrap(), 1);
         assert_eq!(iter.next().unwrap(), 2);
@@ -2459,7 +2336,7 @@ mod tests {
         let (tx1, rx1) = channel::<i32>();
         let (tx2, rx2) = channel::<()>();
         let (tx3, rx3) = channel::<()>();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx2.recv().unwrap();
             tx1.send(1).unwrap();
             tx3.send(()).unwrap();
@@ -2484,13 +2361,15 @@ mod tests {
     fn destroy_upgraded_shared_port_when_sender_still_active() {
         let (tx, rx) = channel();
         let (tx2, rx2) = channel();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx.recv().unwrap(); // wait on a oneshot
-            drop(rx);  // destroy a shared
+            drop(rx); // destroy a shared
             tx2.send(()).unwrap();
         });
         // make sure the other thread has gone to sleep
-        for _ in 0..5000 { thread::yield_now(); }
+        for _ in 0..5000 {
+            thread::yield_now();
+        }
 
         // upgrade to a shared chan and send a message
         let t = tx.clone();
@@ -2511,10 +2390,10 @@ mod tests {
 
 #[cfg(all(test, not(target_os = "emscripten")))]
 mod sync_tests {
-    use env;
-    use thread;
     use super::*;
-    use time::Duration;
+    use crate::env;
+    use crate::thread;
+    use crate::time::Duration;
 
     pub fn stress_factor() -> usize {
         match env::var("RUST_TEST_STRESS") {
@@ -2547,6 +2426,7 @@ mod sync_tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn recv_timeout() {
         let (tx, rx) = sync_channel::<i32>(1);
         assert_eq!(rx.recv_timeout(Duration::from_millis(1)), Err(RecvTimeoutError::Timeout));
@@ -2557,7 +2437,7 @@ mod sync_tests {
     #[test]
     fn smoke_threads() {
         let (tx, rx) = sync_channel::<i32>(0);
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             tx.send(1).unwrap();
         });
         assert_eq!(rx.recv().unwrap(), 1);
@@ -2582,7 +2462,7 @@ mod sync_tests {
     #[test]
     fn port_gone_concurrent() {
         let (tx, rx) = sync_channel::<i32>(0);
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx.recv().unwrap();
         });
         while tx.send(1).is_ok() {}
@@ -2592,7 +2472,7 @@ mod sync_tests {
     fn port_gone_concurrent_shared() {
         let (tx, rx) = sync_channel::<i32>(0);
         let tx2 = tx.clone();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx.recv().unwrap();
         });
         while tx.send(1).is_ok() && tx2.send(1).is_ok() {}
@@ -2617,7 +2497,7 @@ mod sync_tests {
     #[test]
     fn chan_gone_concurrent() {
         let (tx, rx) = sync_channel::<i32>(0);
-        thread::spawn(move|| {
+        thread::spawn(move || {
             tx.send(1).unwrap();
             tx.send(1).unwrap();
         });
@@ -2627,8 +2507,10 @@ mod sync_tests {
     #[test]
     fn stress() {
         let (tx, rx) = sync_channel::<i32>(0);
-        thread::spawn(move|| {
-            for _ in 0..10000 { tx.send(1).unwrap(); }
+        thread::spawn(move || {
+            for _ in 0..10000 {
+                tx.send(1).unwrap();
+            }
         });
         for _ in 0..10000 {
             assert_eq!(rx.recv().unwrap(), 1);
@@ -2636,11 +2518,14 @@ mod sync_tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn stress_recv_timeout_two_threads() {
         let (tx, rx) = sync_channel::<i32>(0);
 
-        thread::spawn(move|| {
-            for _ in 0..10000 { tx.send(1).unwrap(); }
+        thread::spawn(move || {
+            for _ in 0..10000 {
+                tx.send(1).unwrap();
+            }
         });
 
         let mut recv_count = 0;
@@ -2649,7 +2534,7 @@ mod sync_tests {
                 Ok(v) => {
                     assert_eq!(v, 1);
                     recv_count += 1;
-                },
+                }
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -2659,20 +2544,21 @@ mod sync_tests {
     }
 
     #[test]
+    #[cfg_attr(target_env = "sgx", ignore)] // FIXME: https://github.com/fortanix/rust-sgx/issues/31
     fn stress_recv_timeout_shared() {
         const AMT: u32 = 1000;
         const NTHREADS: u32 = 8;
         let (tx, rx) = sync_channel::<i32>(0);
         let (dtx, drx) = sync_channel::<()>(0);
 
-        thread::spawn(move|| {
+        thread::spawn(move || {
             let mut recv_count = 0;
             loop {
                 match rx.recv_timeout(Duration::from_millis(10)) {
                     Ok(v) => {
                         assert_eq!(v, 1);
                         recv_count += 1;
-                    },
+                    }
                     Err(RecvTimeoutError::Timeout) => continue,
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
@@ -2686,8 +2572,10 @@ mod sync_tests {
 
         for _ in 0..NTHREADS {
             let tx = tx.clone();
-            thread::spawn(move|| {
-                for _ in 0..AMT { tx.send(1).unwrap(); }
+            thread::spawn(move || {
+                for _ in 0..AMT {
+                    tx.send(1).unwrap();
+                }
             });
         }
 
@@ -2703,7 +2591,7 @@ mod sync_tests {
         let (tx, rx) = sync_channel::<i32>(0);
         let (dtx, drx) = sync_channel::<()>(0);
 
-        thread::spawn(move|| {
+        thread::spawn(move || {
             for _ in 0..AMT * NTHREADS {
                 assert_eq!(rx.recv().unwrap(), 1);
             }
@@ -2716,8 +2604,10 @@ mod sync_tests {
 
         for _ in 0..NTHREADS {
             let tx = tx.clone();
-            thread::spawn(move|| {
-                for _ in 0..AMT { tx.send(1).unwrap(); }
+            thread::spawn(move || {
+                for _ in 0..AMT {
+                    tx.send(1).unwrap();
+                }
             });
         }
         drop(tx);
@@ -2749,11 +2639,12 @@ mod sync_tests {
     #[test]
     fn oneshot_single_thread_recv_chan_close() {
         // Receiving on a closed chan will panic
-        let res = thread::spawn(move|| {
+        let res = thread::spawn(move || {
             let (tx, rx) = sync_channel::<i32>(0);
             drop(tx);
             rx.recv().unwrap();
-        }).join();
+        })
+        .join();
         // What is our res?
         assert!(res.is_err());
     }
@@ -2833,7 +2724,7 @@ mod sync_tests {
     #[test]
     fn oneshot_multi_task_recv_then_send() {
         let (tx, rx) = sync_channel::<Box<i32>>(0);
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             assert!(*rx.recv().unwrap() == 10);
         });
 
@@ -2843,12 +2734,13 @@ mod sync_tests {
     #[test]
     fn oneshot_multi_task_recv_then_close() {
         let (tx, rx) = sync_channel::<Box<i32>>(0);
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             drop(tx);
         });
-        let res = thread::spawn(move|| {
+        let res = thread::spawn(move || {
             assert!(*rx.recv().unwrap() == 10);
-        }).join();
+        })
+        .join();
         assert!(res.is_err());
     }
 
@@ -2856,7 +2748,7 @@ mod sync_tests {
     fn oneshot_multi_thread_close_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = sync_channel::<i32>(0);
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 drop(rx);
             });
             drop(tx);
@@ -2867,12 +2759,13 @@ mod sync_tests {
     fn oneshot_multi_thread_send_close_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = sync_channel::<i32>(0);
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 drop(rx);
             });
             let _ = thread::spawn(move || {
                 tx.send(1).unwrap();
-            }).join();
+            })
+            .join();
         }
     }
 
@@ -2880,14 +2773,15 @@ mod sync_tests {
     fn oneshot_multi_thread_recv_close_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = sync_channel::<i32>(0);
-            let _t = thread::spawn(move|| {
-                let res = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
+                let res = thread::spawn(move || {
                     rx.recv().unwrap();
-                }).join();
+                })
+                .join();
                 assert!(res.is_err());
             });
-            let _t = thread::spawn(move|| {
-                thread::spawn(move|| {
+            let _t = thread::spawn(move || {
+                thread::spawn(move || {
                     drop(tx);
                 });
             });
@@ -2898,7 +2792,7 @@ mod sync_tests {
     fn oneshot_multi_thread_send_recv_stress() {
         for _ in 0..stress_factor() {
             let (tx, rx) = sync_channel::<Box<i32>>(0);
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 tx.send(box 10).unwrap();
             });
             assert!(*rx.recv().unwrap() == 10);
@@ -2914,18 +2808,22 @@ mod sync_tests {
             recv(rx, 0);
 
             fn send(tx: SyncSender<Box<i32>>, i: i32) {
-                if i == 10 { return }
+                if i == 10 {
+                    return;
+                }
 
-                thread::spawn(move|| {
+                thread::spawn(move || {
                     tx.send(box i).unwrap();
                     send(tx, i + 1);
                 });
             }
 
             fn recv(rx: Receiver<Box<i32>>, i: i32) {
-                if i == 10 { return }
+                if i == 10 {
+                    return;
+                }
 
-                thread::spawn(move|| {
+                thread::spawn(move || {
                     assert!(*rx.recv().unwrap() == i);
                     recv(rx, i + 1);
                 });
@@ -2937,8 +2835,12 @@ mod sync_tests {
     fn recv_a_lot() {
         // Regression test that we don't run out of stack in scheduler context
         let (tx, rx) = sync_channel(10000);
-        for _ in 0..10000 { tx.send(()).unwrap(); }
-        for _ in 0..10000 { rx.recv().unwrap(); }
+        for _ in 0..10000 {
+            tx.send(()).unwrap();
+        }
+        for _ in 0..10000 {
+            rx.recv().unwrap();
+        }
     }
 
     #[test]
@@ -2947,7 +2849,7 @@ mod sync_tests {
         let total = stress_factor() + 100;
         for _ in 0..total {
             let tx = tx.clone();
-            thread::spawn(move|| {
+            thread::spawn(move || {
                 tx.send(()).unwrap();
             });
         }
@@ -2962,7 +2864,7 @@ mod sync_tests {
         let (tx, rx) = sync_channel::<i32>(0);
         let (total_tx, total_rx) = sync_channel::<i32>(0);
 
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             let mut acc = 0;
             for x in rx.iter() {
                 acc += x;
@@ -2982,7 +2884,7 @@ mod sync_tests {
         let (tx, rx) = sync_channel::<i32>(0);
         let (count_tx, count_rx) = sync_channel(0);
 
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             let mut count = 0;
             for x in rx.iter() {
                 if count >= 3 {
@@ -3007,7 +2909,7 @@ mod sync_tests {
         let (tx1, rx1) = sync_channel::<i32>(1);
         let (tx2, rx2) = sync_channel::<()>(1);
         let (tx3, rx3) = sync_channel::<()>(1);
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx2.recv().unwrap();
             tx1.send(1).unwrap();
             tx3.send(()).unwrap();
@@ -3032,13 +2934,15 @@ mod sync_tests {
     fn destroy_upgraded_shared_port_when_sender_still_active() {
         let (tx, rx) = sync_channel::<()>(0);
         let (tx2, rx2) = sync_channel::<()>(0);
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             rx.recv().unwrap(); // wait on a oneshot
-            drop(rx);  // destroy a shared
+            drop(rx); // destroy a shared
             tx2.send(()).unwrap();
         });
         // make sure the other thread has gone to sleep
-        for _ in 0..5000 { thread::yield_now(); }
+        for _ in 0..5000 {
+            thread::yield_now();
+        }
 
         // upgrade to a shared chan and send a message
         let t = tx.clone();
@@ -3052,14 +2956,18 @@ mod sync_tests {
     #[test]
     fn send1() {
         let (tx, rx) = sync_channel::<i32>(0);
-        let _t = thread::spawn(move|| { rx.recv().unwrap(); });
+        let _t = thread::spawn(move || {
+            rx.recv().unwrap();
+        });
         assert_eq!(tx.send(1), Ok(()));
     }
 
     #[test]
     fn send2() {
         let (tx, rx) = sync_channel::<i32>(0);
-        let _t = thread::spawn(move|| { drop(rx); });
+        let _t = thread::spawn(move || {
+            drop(rx);
+        });
         assert!(tx.send(1).is_err());
     }
 
@@ -3067,7 +2975,9 @@ mod sync_tests {
     fn send3() {
         let (tx, rx) = sync_channel::<i32>(1);
         assert_eq!(tx.send(1), Ok(()));
-        let _t =thread::spawn(move|| { drop(rx); });
+        let _t = thread::spawn(move || {
+            drop(rx);
+        });
         assert!(tx.send(1).is_err());
     }
 
@@ -3077,11 +2987,11 @@ mod sync_tests {
         let tx2 = tx.clone();
         let (done, donerx) = channel();
         let done2 = done.clone();
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             assert!(tx.send(1).is_err());
             done.send(()).unwrap();
         });
-        let _t = thread::spawn(move|| {
+        let _t = thread::spawn(move || {
             assert!(tx2.send(2).is_err());
             done2.send(()).unwrap();
         });
@@ -3117,7 +3027,7 @@ mod sync_tests {
             let (tx1, rx1) = sync_channel::<()>(3);
             let (tx2, rx2) = sync_channel::<()>(3);
 
-            let _t = thread::spawn(move|| {
+            let _t = thread::spawn(move || {
                 rx1.recv().unwrap();
                 tx2.try_send(()).unwrap();
             });

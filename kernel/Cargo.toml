@@ -2,6 +2,8 @@
 name = "kernel"
 version = "0.1.0"
 authors = ["Sergio Benitez <sb@sergio.bz>"]
+edition = "2018"
+build = "build.rs"
 
 [lib]
 crate-type = ["staticlib"]
@@ -20,10 +22,13 @@ panic = "abort"
 lto = true
 
 [dependencies]
-pi = { path = "../pi", features = ["std"] }
+pi = { path = "../pi" }
 
 # from assignment 1
 stack-vec = { path = "../../1-shell/stack-vec/" }
 
 # from assignment 2
 fat32 = { path = "../../2-fs/fat32/" }
+
+[target.'cfg(target_os = "ros")'.dependencies]
+std = { path = "../std" }

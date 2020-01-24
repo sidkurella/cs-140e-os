@@ -7,8 +7,9 @@ use std::cmp::max;
 
 use alloc::alloc::{AllocErr, Layout};
 
-use allocator::util::*;
-use allocator::linked_list::LinkedList;
+use crate::allocator::util::*;
+use crate::allocator::linked_list::LinkedList;
+use crate::console::{kprint, kprintln, CONSOLE};
 
 const PAGE_ORDER : usize = 14;
 const PAGE_SIZE : usize = 1 << PAGE_ORDER;
@@ -24,7 +25,6 @@ const SLAB_MAX_SZ : usize = 1 << SLAB_MAX_ORDER;
 const SLAB_ORDER : usize = PAGE_ORDER;
 const SLAB_SZ : usize = PAGE_SIZE; // Should probably be increased later.
 
-use console::{kprint, kprintln, CONSOLE};
 
 macro_rules! construct_array {
     ($e: expr, $n:expr) => (

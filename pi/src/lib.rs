@@ -7,9 +7,9 @@
 #![feature(never_type)]
 #![feature(pointer_methods)]
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(target_arch = "aarch64", no_std)]
 
-#[cfg(feature = "std")]
+#[cfg(not(target_arch = "aarch64"))]
 extern crate core;
 extern crate volatile;
 

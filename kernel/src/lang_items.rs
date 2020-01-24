@@ -1,7 +1,7 @@
 use std::panic::PanicInfo;
 use std::fmt::Write;
 
-use console::{kprintln, CONSOLE};
+use crate::console::{kprintln, CONSOLE};
 
 #[panic_handler]
 #[no_mangle]

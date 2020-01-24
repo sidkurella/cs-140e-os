@@ -71,9 +71,6 @@
 //! * [`std::result`]::[`Result`]::{`self`, `Ok`, `Err`}. A type for functions
 //!   that may succeed or fail. Like [`Option`], its variants are exported as
 //!   well.
-//! * [`std::slice`]::[`SliceConcatExt`], a trait that exists for technical
-//!   reasons, but shouldn't have to exist. It provides a few useful methods on
-//!   slices.
 //! * [`std::string`]::{[`String`], [`ToString`]}, heap allocated strings.
 //! * [`std::vec`]::[`Vec`](../vec/struct.Vec.html), a growable, heap-allocated
 //!   vector.
@@ -129,10 +126,10 @@
 //! [`std::string`]: ../string/index.html
 //! [`std::vec`]: ../vec/index.html
 //! [`to_owned`]: ../borrow/trait.ToOwned.html#tymethod.to_owned
-//! [book-closures]: ../../book/first-edition/closures.html
-//! [book-dtor]: ../../book/first-edition/drop.html
-//! [book-enums]: ../../book/first-edition/enums.html
-//! [book-iter]: ../../book/first-edition/iterators.html
+//! [book-closures]: ../../book/ch13-01-closures.html
+//! [book-dtor]: ../../book/ch15-03-drop.html
+//! [book-enums]: ../../book/ch06-01-defining-an-enum.html
+//! [book-iter]: ../../book/ch13-02-iterators.html
 
 #![stable(feature = "rust1", since = "1.0.0")]
 
