@@ -360,9 +360,9 @@ impl AllocBin {
     /// Allocates a (1 << order) sized chunk from this bin.
     fn alloc(&mut self, page_alloc: &mut BuddyBlockAllocator) -> Result<*mut u8, AllocErr> {
         // Get a slab. Use partially-filled first, if available.
-        let (s, was_empty) = match self.partial.pop() {
+        let (s, was_empty) = match self.partial.peek() {
             Some(s) => (s as *mut SlabInfo, false),
-            None => (match self.free.pop() {
+            None => (match self.free.peek() {
                 Some(s) => s as *mut SlabInfo,
                 None => unsafe { self.add_slab(page_alloc)? }
             }, true)

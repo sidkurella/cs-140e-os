@@ -162,7 +162,7 @@ mod allocator {
         unsafe { ::std::ptr::write_bytes(ptr, 0xAF, size); }
     }
 
-    test_allocators!(bin_dealloc_s, bump_dealloc_s, 4096, |(_, _, mut a)| {
+    test_allocators!(bin_dealloc_s, bump_dealloc_s, 4096 * 4 * 4, |(_, _, mut a)| {
         let layouts = [
             layout!(16, 16),
             layout!(16, 128),
@@ -186,10 +186,10 @@ mod allocator {
     test_allocators!(@bin, bin_dealloc_1, 65536, |(_, _, mut a)| {
         let layouts = [
             layout!(16, 16),
-            layout!(16, 256),
+            // layout!(16, 256),
             layout!(32, 4),
-            layout!(32, 1024),
-            layout!(4, 1024),
+            // layout!(32, 1024),
+            // layout!(4, 1024),
             layout!(4, 32),
         ];
 
