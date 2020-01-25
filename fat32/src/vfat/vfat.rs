@@ -1,6 +1,6 @@
 use std::io;
 use std::path::Path;
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 use std::cmp::min;
 
 use util::SliceExt;
@@ -74,6 +74,81 @@ impl VFat {
     //    reference points directly into a cached sector.
     //
     //    fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry>;
+
+    fn read_cluster(
+        &mut self,
+        cluster: Cluster,
+        buf: &mut [u8]
+    ) -> io::Result<usize> {
+        match self.fat_entry(cluster)?.status() {
+            Status::Data(_) | Status::Eoc(_) => {
+                let sector = cluster.into_sector(
+                    self.data_start_sector, self.sectors_per_cluster
+                );
+
+                let sector_sz = self.device.sector_size() as usize;
+                let cluster_sz = sector_sz * self.sectors_per_cluster as usize;
+                let sz = min(cluster_sz, buf.len());
+
+                for (i, chunk) in buf[..sz].chunks_mut(sector_sz).enumerate() {
+                    let bytes_read = self.device.read_sector(
+                        sector + i as u64, chunk
+                    )?;
+
+                    // Last chunk may be smaller.
+                    let test_sz = min(sector_sz, chunk.len());
+                    if bytes_read != test_sz {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "failed to read whole sector"
+                        ))
+                    }
+                }
+
+                Ok(sz)
+            },
+
+            _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "attempt to read from cluster with no data"
+                 ))
+        }
+    }
+
+    // FIXME: What if the number of sectors_per_cluster isn't 1?
+    fn read_chain(
+        &mut self,
+        start: Cluster,
+        buf: &mut Vec<u8>
+    ) -> io::Result<usize> {
+        let mut cluster = start;
+        let mut sz: usize = 0;
+        loop {
+            let end = buf.len();
+            buf.resize(end + self.device.sector_size() as usize, 0u8);
+            self.read_cluster(cluster, &mut buf[end ..]);
+            sz += self.device.sector_size() as usize;
+            match self.fat_entry(start)?.status() {
+                Status::Data(c) => cluster = c,
+                Status::Eoc(_) => return Ok(sz),
+                _ => return Err(io::Error::new(
+                    io::ErrorKind::InvalidData, "invalid entry in chain"
+                ))
+            }
+        }
+    }
+
+
+    fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry> {
+        let len = self.bytes_per_sector;
+        let (sector, byte_off, entry_sz) = cluster.fat_entry_offset(
+            self.fat_start_sector, self.bytes_per_sector
+        );
+        let bytes = &self.device.get(sector)?[
+            byte_off as usize .. byte_off as usize + entry_sz
+        ];
+        Ok(&(unsafe { SliceExt::cast(bytes) })[0])
+    }
 }
 
 impl<'a> FileSystem for &'a Shared<VFat> {
