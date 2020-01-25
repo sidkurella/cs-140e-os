@@ -61,7 +61,7 @@ macro vfat_from_resource($name:expr) {
 fn check_mbr_size() {
     check_size!(MasterBootRecord, 512);
     check_size!(PartitionEntry, 16);
-    check_size!(CHS, 3);
+    check_size!(CHS, 4);
 }
 
 #[test]
