@@ -115,19 +115,23 @@ impl VFat {
         }
     }
 
-    // FIXME: What if the number of sectors_per_cluster isn't 1?
     fn read_chain(
         &mut self,
         start: Cluster,
         buf: &mut Vec<u8>
     ) -> io::Result<usize> {
-        let mut cluster = start;
-        let mut sz: usize = 0;
+        let mut cluster = start; // The cluster to read.
+        let mut sz: usize = 0; // The number of bytes read.
+
+        let sector_sz = self.device.sector_size() as usize;
+        let cluster_sz = sector_sz * self.sectors_per_cluster as usize;
+
+        // Loop while we go through the linked list of clusters.
+        // Returned out of when the chain ends or on error.
         loop {
             let end = buf.len();
-            buf.resize(end + self.device.sector_size() as usize, 0u8);
-            self.read_cluster(cluster, &mut buf[end ..]);
-            sz += self.device.sector_size() as usize;
+            buf.resize(end + cluster_sz, 0u8);
+            sz += self.read_cluster(cluster, &mut buf[end ..])?;
             match self.fat_entry(start)?.status() {
                 Status::Data(c) => cluster = c,
                 Status::Eoc(_) => return Ok(sz),
