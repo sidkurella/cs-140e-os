@@ -1,5 +1,5 @@
-/// Trait for a timestamp (year, month, day, hour, minute, second).
-pub trait Timestamp: Copy + Clone + Sized {
+/// Trait for a date (year, month, day).
+pub trait Date: Copy + Clone + Sized {
     /// The calendar year.
     ///
     /// The year is not offset. 2009 is 2009.
@@ -12,7 +12,10 @@ pub trait Timestamp: Copy + Clone + Sized {
 
     /// The calendar day, starting at 1. Always in range [1, 31].
     fn day(&self) -> u8;
+}
 
+/// Trait for a time (hour, minute, second).
+pub trait Time: Copy + Clone + Sized {
     /// The 24-hour hour. Always in range [0, 24).
     fn hour(&self) -> u8;
 
@@ -21,6 +24,11 @@ pub trait Timestamp: Copy + Clone + Sized {
 
     /// The second. Always in range [0, 60).
     fn second(&self) -> u8;
+}
+
+/// Trait for a timestamp (year, month, day, hour, minute, second).
+pub trait Timestamp: Copy + Clone + Sized + Date + Time {
+    // Nothing additional.
 }
 
 /// Trait for directory entry metadata.

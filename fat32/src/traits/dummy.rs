@@ -1,5 +1,5 @@
 use std::io;
-use traits::{File, Dir, Entry, Metadata, Timestamp};
+use traits::{Time, Date, File, Dir, Entry, Metadata, Timestamp};
 
 /// A type that implements all of the file system traits.
 #[derive(Copy, Clone)]
@@ -51,13 +51,20 @@ impl Entry for Dummy {
     fn into_dir(self) -> Option<Self::Dir> { panic!("Dummy") }
 }
 
-impl Timestamp for Dummy {
+impl Date for Dummy {
     fn year(&self) -> usize { panic!("Dummy") }
     fn month(&self) -> u8 { panic!("Dummy") }
     fn day(&self) -> u8 { panic!("Dummy") }
+}
+
+impl Time for Dummy {
     fn hour(&self) -> u8 { panic!("Dummy") }
     fn minute(&self) -> u8 { panic!("Dummy") }
     fn second(&self) -> u8 { panic!("Dummy") }
+}
+
+impl Timestamp for Dummy {
+    // Nothing to do.
 }
 
 impl Metadata for Dummy {
