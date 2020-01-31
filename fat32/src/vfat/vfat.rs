@@ -115,7 +115,7 @@ impl VFat {
         }
     }
 
-    fn read_chain(
+    pub fn read_chain(
         &mut self,
         start: Cluster,
         buf: &mut Vec<u8>

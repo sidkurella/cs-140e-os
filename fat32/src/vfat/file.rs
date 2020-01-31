@@ -10,6 +10,28 @@ pub struct File {
 }
 
 // FIXME: Implement `traits::File` (and its supertraits) for `File`.
+impl traits::File for File {
+    /// Writes any buffered data to disk.
+    fn sync(&mut self) -> io::Result<()> { unimplemented!("lol") }
+
+    /// Returns the size of the file in bytes.
+    fn size(&self) -> u64 { unimplemented!("lol") }
+}
+
+impl io::Read for File {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        unimplemented!("LOL")
+    }
+}
+
+impl io::Write for File {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        unimplemented!("LOL")
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        unimplemented!("LOL")
+    }
+}
 
 impl io::Seek for File {
     /// Seek to offset `pos` in the file.

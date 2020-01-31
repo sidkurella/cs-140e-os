@@ -30,7 +30,9 @@ impl Dir for Dummy {
     type Iter = Dummy;
 
     /// Returns an interator over the entries in this directory.
-    fn entries(&self) -> io::Result<Self::Iter> { panic!("Dummy") }
+    fn entries(&self) -> io::Result<Self::Iter> {
+        panic!("Dummy")
+    }
 }
 
 impl Iterator for Dummy {

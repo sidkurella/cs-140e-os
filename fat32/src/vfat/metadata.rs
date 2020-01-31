@@ -6,12 +6,13 @@ use traits;
 const BASE_YEAR: usize = 1980;
 const SECONDS_MULTIPLIER: u8 = 2;
 
-const READ_ONLY: u8 = 0x1;
-const HIDDEN: u8 = 0x2;
-const SYSTEM: u8 = 0x4;
-const VOLUME_ID: u8 = 0x8;
-const DIRECTORY: u8 = 0x10;
-const ARCHIVE: u8 = 0x20;
+pub const READ_ONLY: u8 = 0x1;
+pub const HIDDEN: u8 = 0x2;
+pub const SYSTEM: u8 = 0x4;
+pub const VOLUME_ID: u8 = 0x8;
+pub const DIRECTORY: u8 = 0x10;
+pub const ARCHIVE: u8 = 0x20;
+pub const LFN: u8 = READ_ONLY | HIDDEN | SYSTEM | VOLUME_ID;
 
 /// A date as represented in FAT32 on-disk structures.
 #[repr(C, packed)]
@@ -40,17 +41,10 @@ pub struct Timestamp {
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone)]
 pub struct Metadata {
-    file_name: [u8; 8],
-    file_ext: [u8; 3],
     attributes: Attributes,
-    _reserved: u8,
-    creation_tenths: u8,
     creation: Timestamp,
     last_access_date: Date,
-    first_cluster_high: u16,
-    last_modified: Timestamp,
-    first_cluster_low: u16,
-    file_size: u32
+    last_modified: Timestamp
 }
 
 impl Date {
@@ -71,6 +65,16 @@ impl Date {
             12 => "December",
              _ => "<invalid>"
         }
+    }
+}
+
+impl Attributes {
+    pub fn is_lfn(&self) -> bool {
+        self.0 == LFN
+    }
+
+    pub fn is_dir(&self) -> bool {
+        self.0 == DIRECTORY
     }
 }
 
@@ -197,26 +201,9 @@ impl fmt::Display for Metadata {
             write!(f, "Hidden ")?;
         }
 
-        let name;
-        match str::from_utf8(&self.file_name) {
-            // Because ? can't auto-convert this error.
-            Ok(c) => name = c,
-            Err(_) => return Err(fmt::Error)
-        }
-
-        let ext;
-        match str::from_utf8(&self.file_ext) {
-            // Because ? can't auto-convert this error.
-            Ok(c) => ext = c,
-            Err(_) => return Err(fmt::Error)
-        }
-
         write!(
-            f, "{}.{}\nSize: {}\nCreated {}.{}\nAccessed {}\nModified {}",
-            name, ext,
-            self.file_size,
-            self.created(), self.creation_tenths,
-            self.last_access_date, self.modified()
+            f, "Created {}\nAccessed {}\nModified {}",
+            self.created(), self.last_access_date, self.modified()
         )
     }
 }
