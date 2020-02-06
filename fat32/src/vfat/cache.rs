@@ -124,6 +124,22 @@ impl CachedDevice {
         let c = self.cache.get(&sector).unwrap();
         Ok(&c.data)
     }
+
+    /// Read from a specified byte offset within a sector.
+    pub fn read_offset(&mut self, n: u64, off: usize, buf: &mut [u8])
+                       -> io::Result<usize> {
+        let data = self.get(n)?;
+        if off > data.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid read offset"
+            ))
+        }
+        let sz = cmp::min(buf.len(), data.len() - off);
+        buf[..sz].copy_from_slice(&data[off..off + sz]);
+
+        Ok(sz)
+    }
 }
 
 impl BlockDevice for CachedDevice {

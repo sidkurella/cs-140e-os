@@ -78,19 +78,42 @@ impl VFat {
     fn read_cluster(
         &mut self,
         cluster: Cluster,
+        offset: usize,
         buf: &mut [u8]
     ) -> io::Result<usize> {
         match self.fat_entry(cluster)?.status() {
             Status::Data(_) | Status::Eoc(_) => {
+                // Calculate starting sector by adding offset.
                 let sector = cluster.into_sector(
                     self.data_start_sector, self.sectors_per_cluster
-                );
+                ) + (offset as u64) / (self.bytes_per_sector as u64);
+
+                // Calculate within-sector offset.
+                let off = offset % (self.bytes_per_sector as usize);
 
                 let sector_sz = self.device.sector_size() as usize;
                 let cluster_sz = self.cluster_size();
-                let sz = min(cluster_sz, buf.len());
 
-                for (i, chunk) in buf[..sz].chunks_mut(sector_sz).enumerate() {
+                // Size for first, possibly smaller than sector read.
+                let first_sz = min(sector_sz - off, buf.len());
+                // Calculate total expected size to read.
+                let total_sz = min(cluster_sz - off, buf.len());
+
+                // Read in first part, from offset to end of sector.
+                let first_read = self.device.read_offset(
+                    sector as u64, off, &mut buf[..first_sz]
+                )?;
+                if first_read != first_sz {
+                    // Short-read first sector.
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "failed to read expected number of bytes from sector"
+                    ))
+                }
+
+                // Now read whole sectors.
+                for (i, chunk) in buf[first_sz..total_sz]
+                                  .chunks_mut(sector_sz).enumerate() {
                     let bytes_read = self.device.read_sector(
                         sector + i as u64, chunk
                     )?;
@@ -98,14 +121,15 @@ impl VFat {
                     // Last chunk may be smaller.
                     let test_sz = min(sector_sz, chunk.len());
                     if bytes_read != test_sz {
+                        // Short-read a sector.
                         return Err(io::Error::new(
                             io::ErrorKind::UnexpectedEof,
-                            "failed to read whole sector"
+                            "failed to read expected number of bytes from sector"
                         ))
                     }
                 }
 
-                Ok(sz)
+                Ok(total_sz)
             },
 
             _ => Err(io::Error::new(
@@ -130,7 +154,7 @@ impl VFat {
         loop {
             let end = buf.len();
             buf.resize(end + cluster_sz, 0u8);
-            sz += self.read_cluster(cluster, &mut buf[end ..])?;
+            sz += self.read_cluster(cluster, 0, &mut buf[end ..])?;
             match self.next_cluster(cluster)? {
                 Some(c) => cluster = c,
                 None => return Ok(sz)

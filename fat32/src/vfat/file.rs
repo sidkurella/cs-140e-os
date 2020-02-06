@@ -72,7 +72,9 @@ impl traits::File for File {
 
 impl io::Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        unimplemented!("LOL")
+        let mut bytes_read: usize = 0;
+        let cluster_sz = self.vfat.borrow().cluster_size();
+        unimplemented!("lol")
     }
 }
 
