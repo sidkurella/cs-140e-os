@@ -87,7 +87,7 @@ impl VFat {
                 );
 
                 let sector_sz = self.device.sector_size() as usize;
-                let cluster_sz = sector_sz * self.sectors_per_cluster as usize;
+                let cluster_sz = self.cluster_size();
                 let sz = min(cluster_sz, buf.len());
 
                 for (i, chunk) in buf[..sz].chunks_mut(sector_sz).enumerate() {
@@ -123,8 +123,7 @@ impl VFat {
         let mut cluster = start; // The cluster to read.
         let mut sz: usize = 0; // The number of bytes read.
 
-        let sector_sz = self.device.sector_size() as usize;
-        let cluster_sz = sector_sz * self.sectors_per_cluster as usize;
+        let cluster_sz = self.cluster_size();
 
         // Loop while we go through the linked list of clusters.
         // Returned out of when the chain ends or on error.
@@ -132,16 +131,39 @@ impl VFat {
             let end = buf.len();
             buf.resize(end + cluster_sz, 0u8);
             sz += self.read_cluster(cluster, &mut buf[end ..])?;
-            match self.fat_entry(start)?.status() {
+            match self.next_cluster(cluster)? {
+                Some(c) => cluster = c,
+                None => return Ok(sz)
+            }
+        }
+    }
+
+    /// Get the next cluster number from the current cluster number.
+    pub fn next_cluster(&mut self, cluster: Cluster) -> io::Result<Option<Cluster>> {
+        match self.fat_entry(cluster)?.status() {
+            Status::Data(c) => Ok(Some(c)),
+            Status::Eoc(_) => Ok(None),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData, "invalid entry in chain"
+            ))
+        }
+    }
+
+    /// Finds the cluster that is offset clusters from the start.
+    pub fn find_cluster(&mut self, start: Cluster, offset: usize)
+        -> io::Result<Option<Cluster>> {
+        let mut cluster = start;
+        for _ in 0..offset {
+            match self.fat_entry(cluster)?.status() {
                 Status::Data(c) => cluster = c,
-                Status::Eoc(_) => return Ok(sz),
+                Status::Eoc(_) => return Ok(None),
                 _ => return Err(io::Error::new(
                     io::ErrorKind::InvalidData, "invalid entry in chain"
                 ))
             }
         }
+        Ok(Some(cluster))
     }
-
 
     fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry> {
         let len = self.bytes_per_sector;
@@ -152,6 +174,11 @@ impl VFat {
             byte_off as usize .. byte_off as usize + entry_sz
         ];
         Ok(&(unsafe { SliceExt::cast(bytes) })[0])
+    }
+
+    pub fn cluster_size(&self) -> usize {
+        let sector_sz = self.device.sector_size() as usize;
+        sector_sz * self.sectors_per_cluster as usize
     }
 }
 
