@@ -14,7 +14,9 @@ use vfat::metadata;
 #[derive(Debug)]
 pub struct Dir {
     first_cluster: Cluster,
-    vfat: Shared<VFat>
+    vfat: Shared<VFat>,
+    name: String,
+    meta: Metadata
 }
 
 #[repr(C, packed)]
@@ -62,6 +64,7 @@ pub union VFatDirEntry {
 }
 
 pub struct DirIter {
+    vfat: Shared<VFat>,
     data: Vec<u8>,
     off: usize
 }
@@ -143,7 +146,37 @@ impl Iterator for DirIter {
             write!(&mut name, "{}.{}", dos_name, dos_ext);
         }
 
-        unimplemented!("LKJ")
+        let first_cluster = Cluster::from(
+            ((regular.first_cluster_high as u32) << 16)
+            | regular.first_cluster_low  as u32
+        );
+
+        if regular.attributes.is_dir() {
+            Some(Entry::DirKind(Dir {
+                first_cluster: first_cluster,
+                meta: Metadata {
+                    attributes: regular.attributes,
+                    creation: regular.creation,
+                    last_access_date: regular.last_access_date,
+                    last_modified: regular.last_modified
+                },
+                name: name,
+                vfat: self.vfat.clone()
+            }))
+        } else {
+            Some(Entry::FileKind(File::new(
+                first_cluster,
+                Metadata {
+                    attributes: regular.attributes,
+                    creation: regular.creation,
+                    last_access_date: regular.last_access_date,
+                    last_modified: regular.last_modified
+                },
+                name,
+                regular.file_size as usize,
+                self.vfat.clone()
+            )))
+        }
     }
 }
 
@@ -159,7 +192,34 @@ impl Dir {
     /// If `name` contains invalid UTF-8 characters, an error of `InvalidInput`
     /// is returned.
     pub fn find<P: AsRef<OsStr>>(&self, name: P) -> io::Result<Entry> {
-        unimplemented!("Dir::find()")
+        use traits::Dir;
+        let name_str = match name.as_ref().to_str() {
+            Some(x) => x,
+            None => return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "name is invalid utf8"
+            ))
+        };
+
+        for entry in self.entries()? {
+            use traits::Entry;
+            if entry.name().eq_ignore_ascii_case(name_str) {
+                return Ok(entry)
+            }
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "find target not found"
+        ))
+    }
+
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn meta(&self) -> &Metadata {
+        &self.meta
     }
 }
 
@@ -171,6 +231,7 @@ impl traits::Dir for Dir {
         let mut vec = Vec::new();
         self.vfat.borrow_mut().read_chain(self.first_cluster, &mut vec)?;
         Ok(DirIter {
+            vfat: self.vfat.clone(),
             data: vec,
             off: 0
         })

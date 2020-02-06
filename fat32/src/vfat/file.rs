@@ -6,7 +6,32 @@ use vfat::{VFat, Shared, Cluster, Metadata};
 
 #[derive(Debug)]
 pub struct File {
-    // FIXME: Fill me in.
+    first_cluster: Cluster,
+    vfat: Shared<VFat>,
+    name: String,
+    size: usize,
+    meta: Metadata
+}
+
+impl File {
+    pub fn new(first_cluster: Cluster, meta: Metadata,
+               name: String, size: usize, vfat: Shared<VFat>) -> File {
+        File {
+            first_cluster: first_cluster,
+            meta: meta,
+            name: name,
+            size: size,
+            vfat: vfat
+        }
+    }
+
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn meta(&self) -> &Metadata {
+        &self.meta
+    }
 }
 
 // FIXME: Implement `traits::File` (and its supertraits) for `File`.

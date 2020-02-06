@@ -41,10 +41,10 @@ pub struct Timestamp {
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone)]
 pub struct Metadata {
-    attributes: Attributes,
-    creation: Timestamp,
-    last_access_date: Date,
-    last_modified: Timestamp
+    pub attributes: Attributes,
+    pub creation: Timestamp,
+    pub last_access_date: Date,
+    pub last_modified: Timestamp
 }
 
 impl Date {
