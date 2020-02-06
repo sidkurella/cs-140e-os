@@ -74,7 +74,74 @@ impl io::Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut bytes_read: usize = 0;
         let cluster_sz = self.vfat.borrow().cluster_size();
-        unimplemented!("lol")
+
+        // Calculate size for first read (maybe smaller than whole cluster).
+        let first_sz = min(cluster_sz - self.pos.byte_offset, buf.len());
+        // Calculate size for whole read.
+        let total_sz = min(self.size - self.pos.total_offset, buf.len());
+
+        // Read first part, which may be less than a cluster.
+        let first_read = self.vfat.borrow_mut().read_cluster(
+            self.pos.cluster,
+            self.pos.byte_offset,
+            &mut buf[..first_sz]
+        )?;
+        if first_read != first_sz {
+            // Short-read first sector.
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "failed to read expected number of bytes from cluster"
+            ))
+        }
+
+        let mut bytes_read: usize = first_sz;
+
+        // Update position after first read.
+        let cluster = match self.vfat.borrow_mut().next_cluster(self.pos.cluster)? {
+            Some(c) => c,
+            None => return Ok(bytes_read) // Should this be an error? Size is checked...
+        };
+        self.pos = Position {
+            cluster: cluster,
+            cluster_offset: self.pos.cluster_offset + 1,
+            byte_offset: 0,
+            total_offset: self.pos.total_offset + first_sz
+        };
+
+
+        // Read whole clusters.
+        for chunk in buf[first_sz..total_sz].chunks_mut(cluster_sz) {
+            let cluster_read = self.vfat.borrow_mut().read_cluster(
+                self.pos.cluster,
+                self.pos.byte_offset, // Always 0.
+                chunk
+            )?;
+
+            let test_sz = min(cluster_sz, chunk.len());
+            if cluster_read != test_sz {
+                // Short-read a sector.
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "failed to read expected number of bytes from cluster"
+                ))
+            }
+            bytes_read = bytes_read + cluster_read;
+
+            // Update position information.
+            let next_cluster = match self.vfat.borrow_mut()
+                                     .next_cluster(self.pos.cluster)? {
+                Some(c) => c,
+                None => return Ok(bytes_read) // Should this be an error? Size is checked...
+            };
+            self.pos = Position {
+                cluster: next_cluster,
+                cluster_offset: self.pos.cluster_offset + 1,
+                byte_offset: 0,
+                total_offset: self.pos.total_offset + chunk.len()
+            };
+        }
+
+        Ok(total_sz)
     }
 }
 

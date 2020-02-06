@@ -75,7 +75,7 @@ impl VFat {
     //
     //    fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry>;
 
-    fn read_cluster(
+    pub fn read_cluster(
         &mut self,
         cluster: Cluster,
         offset: usize,
