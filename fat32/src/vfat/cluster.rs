@@ -14,7 +14,7 @@ impl From<u32> for Cluster {
 // TODO: Implement any useful helper methods on `Cluster`.
 impl Cluster {
     pub fn into_sector(&self, data_start_sector: u64, sectors_per_cluster: u8) -> u64 {
-        self.0 as u64 * sectors_per_cluster as u64 + data_start_sector
+        (self.0 - 2) as u64 * sectors_per_cluster as u64 + data_start_sector
     }
 
     pub fn fat_entry_offset(

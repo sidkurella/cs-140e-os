@@ -57,24 +57,18 @@ impl CachedDevice {
     /// Maps a user's request for a sector `virt` to the physical sector and
     /// number of physical sectors required to access `virt`.
     fn virtual_to_physical(&self, virt: u64) -> (u64, u64) {
-        if self.device.sector_size() == self.partition.sector_size {
-            (virt, 1)
-        } else if virt < self.partition.start {
-            (virt, 1)
-        } else {
-            let factor = self.partition.sector_size / self.device.sector_size();
-            let logical_offset = virt - self.partition.start;
-            let physical_offset = logical_offset * factor;
-            let physical_sector = self.partition.start + physical_offset;
-            (physical_sector, factor)
-        }
+        let factor = self.partition.sector_size / self.device.sector_size();
+        let logical_offset = virt;
+        let physical_offset = logical_offset * factor;
+        let physical_sector = self.partition.start + physical_offset;
+        (physical_sector, factor)
     }
 
     fn load_to_cache(&mut self, sector: u64) -> io::Result<()> {
         let (phys, len) = self.virtual_to_physical(sector);
         let sector_sz : usize = self.device.sector_size() as usize;
         let mut c = CacheEntry {
-            data: vec![0; (len as usize * sector_sz)],
+            data: vec![0; len as usize * sector_sz],
             dirty: false
         };
 
@@ -87,6 +81,8 @@ impl CachedDevice {
                 )
             }
         }
+        let contains = self.cache.insert(sector, c);
+        assert_eq!(contains.is_none(), true);
         Ok(())
     }
 
@@ -101,7 +97,7 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get_mut(&mut self, sector: u64) -> io::Result<&mut [u8]> {
-        if self.cache.contains_key(&sector) {
+        if !self.cache.contains_key(&sector) {
             self.load_to_cache(sector)?;
         }
 
@@ -117,7 +113,7 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get(&mut self, sector: u64) -> io::Result<&[u8]> {
-        if self.cache.contains_key(&sector) {
+        if !self.cache.contains_key(&sector) {
             self.load_to_cache(sector)?;
         }
 

@@ -95,7 +95,7 @@ impl Attributes {
     }
 
     pub fn is_dir(&self) -> bool {
-        self.0 == DIRECTORY
+        (self.0 & DIRECTORY) != 0
     }
 
     pub fn new(x: u8) -> Attributes {
@@ -106,34 +106,34 @@ impl Attributes {
 impl traits::Date for Date {
     fn year(&self) -> usize {
         // Bits 9-15 are year, starting from 1980.
-        (self.0 >> 8) as usize + BASE_YEAR
+        (self.0 >> 9) as usize + BASE_YEAR
     }
 
     fn month(&self) -> u8 {
         // Bits 5-8 are month.
-        (self.0 >> 4) as u8 & 0xF
+        (self.0 >> 5) as u8 & 0xF
     }
 
     fn day(&self) -> u8 {
-        // Low 4 bits are day.
-        (self.0 & 0xF) as u8
+        // Low 5 bits are day.
+        (self.0 & 0x1F) as u8
     }
 }
 
 impl traits::Time for Time {
     fn hour(&self) -> u8 {
         // Bits 11-15 are hours.
-        (self.0 >> 10) as u8
+        (self.0 >> 11) as u8
     }
 
     fn minute(&self) -> u8 {
         // Bits 5-10 are minutes.
-        (self.0 >> 4) as u8 & 0x3F
+        (self.0 >> 5) as u8 & 0x3F
     }
 
     fn second(&self) -> u8 {
-        // Low 4 bits are seconds/2.
-        (self.0 & 0xF) as u8 * SECONDS_MULTIPLIER
+        // Low 5 bits are seconds/2.
+        (self.0 & 0x1F) as u8 * SECONDS_MULTIPLIER
     }
 }
 

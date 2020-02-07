@@ -20,7 +20,7 @@ pub struct Dir {
 }
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct VFatRegularDirEntry {
     file_name: [u8; 8],
     file_ext: [u8; 3],
@@ -36,7 +36,7 @@ pub struct VFatRegularDirEntry {
 }
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct VFatLfnDirEntry {
     seq_number: u8,
     name_1: [u16; 5],
@@ -70,7 +70,7 @@ pub struct DirIter {
 }
 
 impl DirIter {
-    fn read_entry(&mut self) -> Option<VFatUnknownDirEntry> {
+    fn read_entry_impl(&mut self) -> Option<VFatUnknownDirEntry> {
         if self.off + 32 > self.data.len() {
             None
         } else {
@@ -81,6 +81,17 @@ impl DirIter {
             Some(dir)
         }
     }
+
+    fn read_entry(&mut self) -> Option<VFatUnknownDirEntry> {
+        while let Some(e) = self.read_entry_impl() {
+            if e.id == 0x00 {
+                return None
+            } else if e.id != 0xE5 {
+                return Some(e)
+            }
+        }
+        None
+    }
 }
 
 impl Iterator for DirIter {
@@ -88,9 +99,6 @@ impl Iterator for DirIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut dir = self.read_entry()?;
-        if dir.id == 0x00 {
-            return None
-        }
 
         let mut name: String = String::new();
         let mut buf = [0u16; 260]; // Max long filename.
@@ -104,23 +112,19 @@ impl Iterator for DirIter {
                     }.long_filename
                 };
                 let seq = lfn_entry.seq_number & 0xF;
-                let base = seq as usize * 13;
+                let base = (seq - 1) as usize * 13;
                 for (i, c) in lfn_entry.name_1.iter()
                                 .chain(lfn_entry.name_2.iter())
                                 .chain(lfn_entry.name_3.iter())
-                                .take_while(|r| **r == 0x00 || **r == 0xFF)
                                 .enumerate() {
                     buf[base + i] = *c;
                 }
 
                 dir = self.read_entry()?;
             }
-            use std::iter::Extend;
-            name.extend(
-                decode_utf16(buf.iter().map(|r| *r)
-                    .take_while(|r| *r == 0x00 || *r == 0xFF)
-                ).map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
-            );
+            name = decode_utf16(buf.iter().cloned()
+                .take_while(|r|  *r != 0x0000 && *r != 0xFFFF)
+            ).map(|r| r.unwrap_or(REPLACEMENT_CHARACTER)).collect();
         }
 
         let regular = unsafe {
@@ -129,22 +133,24 @@ impl Iterator for DirIter {
             }.regular
         };
 
+        println!("{:?}", regular);
+
         // At the last entry for this file.
         if name.len() <= 0 { // Use DOS name.
-            let dos_name;
-            match std::str::from_utf8(&regular.file_name) {
-                Ok(c) => dos_name = c,
-                Err(_) => return None
-            }
+            let dos_name =
+                std::str::from_utf8(&regular.file_name).expect("dos name is not utf8").trim_end();
 
-            let dos_ext;
-            match std::str::from_utf8(&regular.file_ext) {
-                Ok(c) => dos_ext = c,
-                Err(_) => return None
-            }
+            let dos_ext =
+                std::str::from_utf8(&regular.file_ext).expect("dos ext is not utf8").trim_end();
+
             use std::fmt::Write;
-            write!(&mut name, "{}.{}", dos_name, dos_ext);
+            if dos_ext.len() > 0 {
+                write!(&mut name, "{}.{}", dos_name, dos_ext).expect("can't write name");
+            } else {
+                write!(&mut name, "{}", dos_name).expect("can't write name");
+            }
         }
+        println!("{}", name);
 
         let first_cluster = Cluster::from(
             ((regular.first_cluster_high as u32) << 16)
@@ -164,6 +170,7 @@ impl Iterator for DirIter {
                 vfat: self.vfat.clone()
             }))
         } else {
+            println!("File: {}", name);
             Some(Entry::FileKind(File::new(
                 first_cluster,
                 Metadata {

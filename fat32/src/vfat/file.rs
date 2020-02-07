@@ -80,6 +80,10 @@ impl io::Read for File {
         // Calculate size for whole read.
         let total_sz = min(self.size - self.pos.total_offset, buf.len());
 
+        if total_sz == 0 {
+            return Ok(0)
+        }
+
         // Read first part, which may be less than a cluster.
         let first_read = self.vfat.borrow_mut().read_cluster(
             self.pos.cluster,

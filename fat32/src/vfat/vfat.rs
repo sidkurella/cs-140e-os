@@ -132,7 +132,7 @@ impl VFat {
                 Ok(total_sz)
             },
 
-            _ => Err(io::Error::new(
+            _ =>  Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "attempt to read from cluster with no data"
                  ))
@@ -194,6 +194,7 @@ impl VFat {
         let (sector, byte_off, entry_sz) = cluster.fat_entry_offset(
             self.fat_start_sector, self.bytes_per_sector
         );
+        //println!("{:?} {} {} {}", self, sector, byte_off, entry_sz);
         let bytes = &self.device.get(sector)?[
             byte_off as usize .. byte_off as usize + entry_sz
         ];
