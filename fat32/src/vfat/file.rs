@@ -7,9 +7,7 @@ use vfat::{VFat, Shared, Cluster, Metadata};
 #[derive(Debug)]
 struct Position {
     cluster: Cluster,
-    cluster_offset: usize,
-    byte_offset: usize,
-    total_offset: usize
+    offset: usize
 }
 
 #[derive(Debug)]
@@ -33,9 +31,7 @@ impl File {
             vfat: vfat,
             pos: Position {
                 cluster: first_cluster,
-                cluster_offset: 0,
-                byte_offset: 0,
-                total_offset: 0
+                offset: 0
             }
         }
     }
@@ -46,14 +42,6 @@ impl File {
 
     pub fn meta(&self) -> &Metadata {
         &self.meta
-    }
-
-    /// Calculates the cluster and start byte from a position from the start.
-    /// Cluster number indexed where 0 is the first cluster.
-    fn offset_cluster(&self, pos: usize) -> (usize, usize) {
-        let cluster_sz = self.vfat.borrow().cluster_size();
-        let cluster_no = pos / cluster_sz;
-        (cluster_no, pos - cluster_no * cluster_sz)
     }
 }
 
@@ -70,82 +58,61 @@ impl traits::File for File {
     }
 }
 
+fn offset_to_cluster(offset: usize, cluster_size: usize) -> (usize, usize) {
+    (offset / cluster_size, offset % cluster_size)
+}
+
 impl io::Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut vfat = self.vfat.borrow_mut();
+
+        let cluster_size = vfat.cluster_size();
+
+        // Figure out the maximum number of clusters to be read by consulting
+        // the current position and the length of the buffer.
+        let (start_cluster, _) = offset_to_cluster(self.pos.offset, cluster_size);
+        let end_cluster = match offset_to_cluster(self.pos.offset + buf.len(), cluster_size) {
+            (c, 0) => c - 1,
+            (c, _) => c
+        };
+
         let mut bytes_read: usize = 0;
-        let cluster_sz = self.vfat.borrow().cluster_size();
+        for _ in (start_cluster..=end_cluster) {
+            // Find the current offset into the cluster for partial first read.
+            let (_, current_offset) = offset_to_cluster(self.pos.offset, cluster_size);
 
-        // Calculate size for first read (maybe smaller than whole cluster).
-        let first_sz = min(cluster_sz - self.pos.byte_offset, buf.len());
-        // Calculate size for whole read.
-        let total_sz = min(self.size - self.pos.total_offset, buf.len());
+            // Compute how many bytes are available in the file and cluster.
+            let bytes_available = min(cluster_size - current_offset, self.size - self.pos.offset);
 
-        if total_sz == 0 {
-            return Ok(0)
-        }
+            let bytes_remaining = buf.len() - bytes_read;
+            let bytes_to_read = min(bytes_remaining, bytes_available);
+            if bytes_to_read > 0 {
+                let bytes_added = vfat.read_cluster(
+                    self.pos.cluster,
+                    current_offset,
+                    &mut buf[bytes_read..bytes_read + bytes_to_read]
+                )?;
 
-        // Read first part, which may be less than a cluster.
-        let first_read = self.vfat.borrow_mut().read_cluster(
-            self.pos.cluster,
-            self.pos.byte_offset,
-            &mut buf[..first_sz]
-        )?;
-        if first_read != first_sz {
-            // Short-read first sector.
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "failed to read expected number of bytes from cluster"
-            ))
-        }
+                if bytes_added != bytes_to_read {
+                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "failed to read all bytes of request"));
+                }
 
-        let mut bytes_read: usize = first_sz;
-
-        // Update position after first read.
-        let cluster = match self.vfat.borrow_mut().next_cluster(self.pos.cluster)? {
-            Some(c) => c,
-            None => return Ok(bytes_read) // Should this be an error? Size is checked...
-        };
-        self.pos = Position {
-            cluster: cluster,
-            cluster_offset: self.pos.cluster_offset + 1,
-            byte_offset: 0,
-            total_offset: self.pos.total_offset + first_sz
-        };
-
-
-        // Read whole clusters.
-        for chunk in buf[first_sz..total_sz].chunks_mut(cluster_sz) {
-            let cluster_read = self.vfat.borrow_mut().read_cluster(
-                self.pos.cluster,
-                self.pos.byte_offset, // Always 0.
-                chunk
-            )?;
-
-            let test_sz = min(cluster_sz, chunk.len());
-            if cluster_read != test_sz {
-                // Short-read a sector.
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "failed to read expected number of bytes from cluster"
-                ))
+                bytes_read += bytes_added;
+                self.pos.offset += bytes_added;
             }
-            bytes_read = bytes_read + cluster_read;
 
-            // Update position information.
-            let next_cluster = match self.vfat.borrow_mut()
-                                     .next_cluster(self.pos.cluster)? {
-                Some(c) => c,
-                None => return Ok(bytes_read) // Should this be an error? Size is checked...
-            };
-            self.pos = Position {
-                cluster: next_cluster,
-                cluster_offset: self.pos.cluster_offset + 1,
-                byte_offset: 0,
-                total_offset: self.pos.total_offset + chunk.len()
-            };
+            // If the number of bytes read is the number availabe, then this
+            // cluster must then be exhausted.
+            if bytes_to_read == bytes_available {
+                self.pos.cluster = match vfat.next_cluster(self.pos.cluster)? {
+                    Some(c) => c,
+                    None => break
+                };
+            }
         }
 
-        Ok(total_sz)
+        // Finally, we return the total number of bytes read.
+        Ok(bytes_read)
     }
 }
 
@@ -186,31 +153,34 @@ impl io::Seek for File {
                     self.size - (-off as usize)
                 },
             SeekFrom::Current(off) =>
-                if ((self.size - self.pos.total_offset) as i64) < off
-                   || (self.pos.total_offset) < (-off as usize) {
+                if ((self.size - self.pos.offset) as i64) < off
+                   || (self.pos.offset) < (-off as usize) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
                         "invalid seek"
                     ))
                 } else {
-                    (self.pos.total_offset as i64 + off) as usize
+                    (self.pos.offset as i64 + off) as usize
                 },
         };
-        let (cluster_offset, byte_offset) = self.offset_cluster(bytes);
-        let cluster = match self.vfat.borrow_mut()
-            .find_cluster(self.first_cluster, cluster_offset)? {
-            Some(c) => c,
-            None => return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid seek"
-            )) // This cluster should exist since we checked file size.
+
+        let cluster = {
+            let mut vfat = self.vfat.borrow_mut();
+            let cluster_size = vfat.cluster_size();
+            let (cluster_idx, _) = offset_to_cluster(bytes, cluster_size);
+
+            match self.vfat.borrow_mut().find_cluster(self.first_cluster, cluster_idx)? {
+                Some(c) => c,
+                // This cluster should exist since we checked file size.
+                None => return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid seek"))
+            }
         };
+
         self.pos = Position {
             cluster: cluster,
-            cluster_offset: cluster_offset,
-            byte_offset: byte_offset,
-            total_offset: bytes
+            offset: bytes
         };
+
         Ok(bytes as u64)
     }
 }

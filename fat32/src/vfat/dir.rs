@@ -133,8 +133,6 @@ impl Iterator for DirIter {
             }.regular
         };
 
-        println!("{:?}", regular);
-
         // At the last entry for this file.
         if name.len() <= 0 { // Use DOS name.
             let dos_name =
@@ -150,7 +148,6 @@ impl Iterator for DirIter {
                 write!(&mut name, "{}", dos_name).expect("can't write name");
             }
         }
-        println!("{}", name);
 
         let first_cluster = Cluster::from(
             ((regular.first_cluster_high as u32) << 16)
@@ -170,7 +167,6 @@ impl Iterator for DirIter {
                 vfat: self.vfat.clone()
             }))
         } else {
-            println!("File: {}", name);
             Some(Entry::FileKind(File::new(
                 first_cluster,
                 Metadata {
