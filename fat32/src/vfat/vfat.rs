@@ -50,31 +50,6 @@ impl VFat {
         Err(Error::NotFound)
     }
 
-    // TODO: The following methods may be useful here:
-    //
-    //  * A method to read from an offset of a cluster into a buffer.
-    //
-    //    fn read_cluster(
-    //        &mut self,
-    //        cluster: Cluster,
-    //        offset: usize,
-    //        buf: &mut [u8]
-    //    ) -> io::Result<usize>;
-    //
-    //  * A method to read all of the clusters chained from a starting cluster
-    //    into a vector.
-    //
-    //    fn read_chain(
-    //        &mut self,
-    //        start: Cluster,
-    //        buf: &mut Vec<u8>
-    //    ) -> io::Result<usize>;
-    //
-    //  * A method to return a reference to a `FatEntry` for a cluster where the
-    //    reference points directly into a cached sector.
-    //
-    //    fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry>;
-
     pub fn read_cluster(
         &mut self,
         cluster: Cluster,
@@ -97,7 +72,7 @@ impl VFat {
                 // Size for first, possibly smaller than sector read.
                 let first_sz = min(sector_sz - off, buf.len());
                 // Calculate total expected size to read.
-                let total_sz = min(cluster_sz - off, buf.len());
+                let total_sz = min(cluster_sz - offset, buf.len());
 
                 // Read in first part, from offset to end of sector.
                 let first_read = self.device.read_offset(
@@ -115,11 +90,11 @@ impl VFat {
                 for (i, chunk) in buf[first_sz..total_sz]
                                   .chunks_mut(sector_sz).enumerate() {
                     let bytes_read = self.device.read_sector(
-                        sector + i as u64, chunk
+                        sector + i as u64 + 1, chunk
                     )?;
 
                     // Last chunk may be smaller.
-                    let test_sz = min(sector_sz, chunk.len());
+                    let test_sz = chunk.len();
                     if bytes_read != test_sz {
                         // Short-read a sector.
                         return Err(io::Error::new(
@@ -132,7 +107,7 @@ impl VFat {
                 Ok(total_sz)
             },
 
-            _ =>  Err(io::Error::new(
+            _ => Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "attempt to read from cluster with no data"
                  ))
