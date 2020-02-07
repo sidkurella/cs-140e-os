@@ -221,6 +221,22 @@ impl Dir {
     pub fn meta(&self) -> &Metadata {
         &self.meta
     }
+
+    pub fn root(cluster: Cluster, vfat: Shared<VFat>) -> Dir {
+        Dir {
+            first_cluster: cluster,
+            vfat: vfat,
+            name: String::from(""),
+            // Not sure if this is right but not sure what the metadata
+            // is for the root dir.
+            meta: Metadata {
+                attributes: Attributes::new(metadata::DIRECTORY),
+                creation: Timestamp::new(),
+                last_access_date: Date::new(),
+                last_modified: Timestamp::new()
+            }
+        }
+    }
 }
 
 impl traits::Dir for Dir {

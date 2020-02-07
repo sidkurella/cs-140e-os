@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, Component};
 use std::mem::{size_of, transmute};
 use std::cmp::min;
 
@@ -207,12 +207,35 @@ impl VFat {
 }
 
 impl<'a> FileSystem for &'a Shared<VFat> {
-    type File = ::traits::Dummy;
-    type Dir = ::traits::Dummy;
-    type Entry = ::traits::Dummy;
+    type File = File;
+    type Dir = Dir;
+    type Entry = Entry;
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
-        unimplemented!("FileSystem::open()")
+        let mut entries: Vec<Self::Entry> = vec![
+            Entry::DirKind(
+                Dir::root(self.borrow().root_dir_cluster, self.clone())
+            )
+        ];
+        for component in path.as_ref().components() {
+            match component {
+                Component::ParentDir => entries.truncate(entries.len() - 1),
+                Component::Normal(s) => {
+                    use traits::Entry;
+                    let cur_dir = &(entries[entries.len() - 1]);
+                    let entry = match cur_dir.as_dir() {
+                        Some(dir) => dir.find(s)?,
+                        None => return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "path spec is not a directory"
+                        ))
+                    };
+                    entries.push(entry);
+                }
+                _ => () // Don't care about CurDir or Prefix or RootDir
+            }
+        }
+        Ok(entries.remove(entries.len() - 1))
     }
 
     fn create_file<P: AsRef<Path>>(self, _path: P) -> io::Result<Self::File> {

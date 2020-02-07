@@ -66,6 +66,27 @@ impl Date {
              _ => "<invalid>"
         }
     }
+
+    pub fn new() -> Date {
+        // Jan 1 1980.
+        Date(0x11)
+    }
+}
+
+impl Time {
+    pub fn new() -> Time {
+        // 00:00:00
+        Time(0)
+    }
+}
+
+impl Timestamp {
+    pub fn new() -> Timestamp {
+        Timestamp {
+            date: Date::new(),
+            time: Time::new()
+        }
+    }
 }
 
 impl Attributes {
@@ -75,6 +96,10 @@ impl Attributes {
 
     pub fn is_dir(&self) -> bool {
         self.0 == DIRECTORY
+    }
+
+    pub fn new(x: u8) -> Attributes {
+        Attributes(x)
     }
 }
 
