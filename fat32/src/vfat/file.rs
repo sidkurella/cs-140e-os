@@ -87,6 +87,7 @@ impl io::Read for File {
             let bytes_remaining = buf.len() - bytes_read;
             let bytes_to_read = min(bytes_remaining, bytes_available);
             if bytes_to_read > 0 {
+                let mut buf2 = vec![0u8; cluster_size];
                 let bytes_added = vfat.read_cluster(
                     self.pos.cluster,
                     current_offset,

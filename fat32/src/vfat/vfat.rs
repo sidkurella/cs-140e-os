@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, Component};
 use std::mem::{size_of, transmute};
-use std::cmp::min;
+use std::cmp::{max, min};
 
 use util::SliceExt;
 use mbr::MasterBootRecord;
@@ -50,31 +50,6 @@ impl VFat {
         Err(Error::NotFound)
     }
 
-    // TODO: The following methods may be useful here:
-    //
-    //  * A method to read from an offset of a cluster into a buffer.
-    //
-    //    fn read_cluster(
-    //        &mut self,
-    //        cluster: Cluster,
-    //        offset: usize,
-    //        buf: &mut [u8]
-    //    ) -> io::Result<usize>;
-    //
-    //  * A method to read all of the clusters chained from a starting cluster
-    //    into a vector.
-    //
-    //    fn read_chain(
-    //        &mut self,
-    //        start: Cluster,
-    //        buf: &mut Vec<u8>
-    //    ) -> io::Result<usize>;
-    //
-    //  * A method to return a reference to a `FatEntry` for a cluster where the
-    //    reference points directly into a cached sector.
-    //
-    //    fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry>;
-
     pub fn read_cluster(
         &mut self,
         cluster: Cluster,
@@ -84,52 +59,37 @@ impl VFat {
         match self.fat_entry(cluster)?.status() {
             Status::Data(_) | Status::Eoc(_) => {
                 // Calculate starting sector by adding offset.
-                let sector = cluster.into_sector(
+                let start_sector = cluster.into_sector(
                     self.data_start_sector, self.sectors_per_cluster
-                ) + (offset as u64) / (self.bytes_per_sector as u64);
+                ) as usize;
 
-                // Calculate within-sector offset.
-                let off = offset % (self.bytes_per_sector as usize);
+                let sector_size = self.bytes_per_sector as usize;
 
-                let sector_sz = self.device.sector_size() as usize;
-                let cluster_sz = self.cluster_size();
+                // Load the sectors that correspond to the specified cluster.
+                let mut bytes_read = 0;
+                for index in 0..self.sectors_per_cluster as usize {
+                    let sector_start_byte = sector_size * index;
+                    let sector_end_byte = sector_size * (index + 1);
 
-                // Size for first, possibly smaller than sector read.
-                let first_sz = min(sector_sz - off, buf.len());
-                // Calculate total expected size to read.
-                let total_sz = min(cluster_sz - off, buf.len());
+                    let read_start = max(offset, sector_start_byte);
+                    let read_end   = min(offset + buf.len(), sector_end_byte);
 
-                // Read in first part, from offset to end of sector.
-                let first_read = self.device.read_offset(
-                    sector as u64, off, &mut buf[..first_sz]
-                )?;
-                if first_read != first_sz {
-                    // Short-read first sector.
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "failed to read expected number of bytes from sector"
-                    ))
-                }
+                    if sector_start_byte <= read_start && read_start < read_end {
+                        let read_length = read_end - read_start;
 
-                // Now read whole sectors.
-                for (i, chunk) in buf[first_sz..total_sz]
-                                  .chunks_mut(sector_sz).enumerate() {
-                    let bytes_read = self.device.read_sector(
-                        sector + i as u64, chunk
-                    )?;
+                        let buf_start = read_start - offset;
+                        let buf_end = buf_start + read_length;
 
-                    // Last chunk may be smaller.
-                    let test_sz = min(sector_sz, chunk.len());
-                    if bytes_read != test_sz {
-                        // Short-read a sector.
-                        return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "failed to read expected number of bytes from sector"
-                        ))
+                        let chunk_start = read_start - sector_start_byte;
+                        let chunk_end = read_end - sector_start_byte;
+
+                        let chunk = self.device.get((start_sector + index) as u64)?;
+                        buf[buf_start..buf_end].copy_from_slice(&chunk[chunk_start..chunk_end]);
+                        bytes_read += read_length;
                     }
                 }
 
-                Ok(total_sz)
+                Ok(bytes_read)
             },
 
             _ =>  Err(io::Error::new(
