@@ -26,7 +26,7 @@ pub extern fn panic_fmt(info: &PanicInfo) -> ! {
     loop { unsafe { asm!("wfe") } }
 }
 
-#[cfg(not(test))] #[lang = "eh_personality"] pub extern fn eh_personality() {}
+// #[cfg(not(test))] #[lang = "eh_personality"] pub extern fn eh_personality() {}
 
 #[no_mangle]
 pub unsafe extern fn memcpy(dest: *mut u8, src: *const u8,

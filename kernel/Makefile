@@ -83,7 +83,7 @@ $(KERNEL).bin: $(KERNEL).elf | $(BUILD_DIR)
 	@$(CROSS)-objcopy $< -O binary $@
 
 run: $(KERNEL).bin
-	qemu-system-aarch64 -s -M raspi3 -serial null -serial mon:stdio -kernel build/kernel.bin
+	qemu-system-aarch64 -s -M raspi3 -serial null -serial mon:stdio -kernel build/kernel.bin -drive file=../../2-fs/files/resources/mock4.fat32.img,if=sd,format=raw
 
 clean:
 	$(XARGO) clean

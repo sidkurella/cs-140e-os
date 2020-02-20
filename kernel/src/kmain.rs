@@ -40,6 +40,7 @@ use console::kprintln;
 #[cfg(not(test))]
 pub extern "C" fn kmain() {
     ALLOCATOR.initialize();
+    FILE_SYSTEM.initialize();
     kprintln!("Initialize OK");
 
     kprintln!("
@@ -51,37 +52,39 @@ pub extern "C" fn kmain() {
   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚══════╝
 ");
 
-    {
-        let mut v = vec![1, 2, 3];
-        kprintln!("{:?}", v);
-        kprintln!("Alloc OK");
+    // {
+    //     let mut v = vec![1, 2, 3];
+    //     kprintln!("{:?}", v);
+    //     kprintln!("Alloc OK");
 
-        v.push(4);
-        kprintln!("{:?}", v);
-        kprintln!("Push OK");
+    //     v.push(4);
+    //     kprintln!("{:?}", v);
+    //     kprintln!("Push OK");
 
-        v.pop();
-        kprintln!("{:?}", v);
-        kprintln!("Pop OK");
-    }
+    //     v.pop();
+    //     kprintln!("{:?}", v);
+    //     kprintln!("Pop OK");
+    // }
 
-    kprintln!("Drop OK");
+    // kprintln!("Drop OK");
 
-    {
-        let mut v = vec![1, 2, 3];
-        kprintln!("{:?}", v);
-        kprintln!("Alloc OK");
+    // {
+    //     let mut v = vec![1, 2, 3];
+    //     kprintln!("{:?}", v);
+    //     kprintln!("Alloc OK");
 
-        v.push(4);
-        kprintln!("{:?}", v);
-        kprintln!("Push OK");
+    //     v.push(4);
+    //     kprintln!("{:?}", v);
+    //     kprintln!("Push OK");
 
-        v.pop();
-        kprintln!("{:?}", v);
-        kprintln!("Pop OK");
-    }
+    //     v.pop();
+    //     kprintln!("{:?}", v);
+    //     kprintln!("Pop OK");
+    // }
 
-    kprintln!("Drop OK");
+    // kprintln!("Drop OK");
+
+    shell::shell("> ");
 
     loop { unsafe { asm!("wfe" :::: "volatile"); } }
 }

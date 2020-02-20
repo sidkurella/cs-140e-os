@@ -1,8 +1,14 @@
+use std::cell::Cell;
 use std::fmt::Write;
+use std::path::{Path, PathBuf};
+use std::io::Read;
 use std::str;
 
 use crate::console::{kprint, kprintln, CONSOLE};
+use crate::FILE_SYSTEM;
 use stack_vec::StackVec;
+use fat32::traits::{FileSystem, Dir, Entry, File};
+use fat32::vfat;
 
 const MAX_CMDLEN : usize = 512;
 const MAX_ARGLEN : usize = 64;
@@ -51,7 +57,7 @@ impl<'a> Command<'a> {
         self.args[0]
     }
 
-    fn handle(&self) -> Result<(), HandleError> {
+    fn handle(&self, working: &mut Cell<PathBuf>) -> Result<(), HandleError> {
         if self.path() == "echo" {
             use std::ops::Deref;
             let mut first = true;
@@ -64,6 +70,68 @@ impl<'a> Command<'a> {
             }
             kprintln!();
             Ok(())
+        } else if self.path() == "pwd" {
+            kprintln!("{}", working.get_mut().display());
+            Ok(())
+        } else if self.path() == "cd" {
+            if self.args.len() == 2 {
+                let mut new = working.get_mut().clone();
+                new.push(self.args[1]);
+
+                match FILE_SYSTEM.open_dir(&new) {
+                    Ok(_) => working.set(new),
+                    Err(error) => kprintln!("cd: {}", error)
+                }
+            } else {
+                kprintln!("cd: improper number of arguments");
+            }
+            Ok(())
+        } else if self.path() == "ls" {
+            let mut all = false;
+            let mut dir = ".";
+
+            if self.args.len() == 2 {
+                dir = &self.args[1];
+            } else if self.args.len() == 3 && self.args[1] == "-a" {
+                all = true;
+                dir = &self.args[2];
+            } else if self.args.len() != 1 {
+                kprintln!("ls: improper number of arguments");
+                return Ok(())
+            }
+
+            let mut new = working.get_mut().clone();
+            new.push(dir);
+
+            match FILE_SYSTEM.open_dir(new).and_then(|dir| dir.entries()) {
+                Ok(iter) => for e in iter { kprintln!("{}", e.name()); },
+                Err(error) => kprintln!("ls: {}", error)
+            }
+
+            Ok(())
+        } else if self.path() == "cat" {
+            if self.args.len() >= 2 {
+                for name in self.args[1..].iter() {
+                    let mut new = working.get_mut().clone();
+                    new.push(name);
+
+                    match FILE_SYSTEM.open_file(new).and_then(|mut file| {
+                                let mut buf = vec![0; file.size() as usize];
+                                file.read(&mut buf).map(|_| buf)
+                            }) {
+                        Ok(buf) =>
+                            match str::from_utf8(&buf[..]) {
+                                Ok(contents) => kprint!("{}", contents),
+                                Err(error) => kprintln!("ls: {}", error)
+                            },
+                        Err(error) => kprintln!("ls: {}", error)
+                    }
+                }
+            } else {
+                kprintln!("cat: improper number of arguments");
+            }
+
+            Ok(())
         } else {
             Err(HandleError::NoSuchCommand)
         }
@@ -75,6 +143,8 @@ impl<'a> Command<'a> {
 pub fn shell(prefix: &str) -> ! {
     let mut input_buf = [0; MAX_CMDLEN];
     let mut input_vec = StackVec::new(&mut input_buf);
+
+    let mut working = Cell::new(PathBuf::from("/"));
 
     loop {
         {
@@ -112,7 +182,7 @@ pub fn shell(prefix: &str) -> ! {
             match Command::parse(&input_str, &mut input_args[..]) {
                 Err(Error::Empty) => {},
                 Err(Error::TooManyArgs) => kprintln!("too many arguments"),
-                Ok(command) => match command.handle() {
+                Ok(command) => match command.handle(&mut working) {
                     Ok(_) => { },
                     Err(HandleError::NoSuchCommand) =>
                         kprintln!("unknown command: {}", command.path())
