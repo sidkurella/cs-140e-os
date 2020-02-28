@@ -92,7 +92,11 @@ pub extern "C" fn kmain() {
 
     // kprintln!("Drop OK");
 
-    shell::shell("> ");
+    unsafe { asm!("brk 2" :::: "volatile"); }
+    unsafe { asm!("svc 77" :::: "volatile"); }
 
-    loop { unsafe { asm!("wfe" :::: "volatile"); } }
+    loop {
+        kprintln!("Kernel terminated!");
+        shell::shell("> ");
+    }
 }

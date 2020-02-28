@@ -75,12 +75,16 @@ switch_to_el1:
     msr     SCTLR_EL1, x2
 
     // set up exception handlers
-    // FIXME: load `_vectors` addr into appropriate register (guide: 10.4)
+    adr     x2, _vectors
+    msr     VBAR_EL1, x2
 
     // change execution level to EL1 (ref: C5.2.19)
     mov     x2, #0x3c5
     msr     SPSR_EL2, x2
-    // FIXME: Return to EL1 at `set_stack`.
+
+    adr     x2, set_stack
+    msr     ELR_EL2, x2
+    eret
 
 set_stack:
     // set the current stack pointer
@@ -104,11 +108,122 @@ go_kmain:
     b       halt
 
 context_save:
-    // FIXME: Save the remaining context to the stack.
+    // use EL0 stack
+    // msr     SPSEL, #0
+
+    // store integer register state
+    sub     SP, SP, #0x0f0
+    stp     x1, x2,   [SP, #0x000]
+    stp     x3, x4,   [SP, #0x010]
+    stp     x5, x6,   [SP, #0x020]
+    stp     x7, x8,   [SP, #0x030]
+    stp     x9, x10,  [SP, #0x040]
+    stp     x11, x12, [SP, #0x050]
+    stp     x13, x14, [SP, #0x060]
+    stp     x15, x16, [SP, #0x070]
+    stp     x17, x18, [SP, #0x080]
+    stp     x19, x20, [SP, #0x090]
+    stp     x21, x22, [SP, #0x0a0]
+    stp     x23, x24, [SP, #0x0b0]
+    stp     x25, x26, [SP, #0x0c0]
+    stp     x27, x28, [SP, #0x0d0]
+    str     x29,      [SP, #0x0e0]
+
+    // store floating point register state
+    sub     SP, SP, #0x200
+    stp     q0,  q1,  [SP, #0x000]
+    stp     q2,  q3,  [SP, #0x020]
+    stp     q4,  q5,  [SP, #0x040]
+    stp     q6,  q7,  [SP, #0x060]
+    stp     q8,  q9,  [SP, #0x080]
+    stp     q10, q11, [SP, #0x0a0]
+    stp     q12, q13, [SP, #0x0c0]
+    stp     q14, q15, [SP, #0x0e0]
+    stp     q16, q17, [SP, #0x100]
+    stp     q18, q19, [SP, #0x120]
+    stp     q20, q21, [SP, #0x140]
+    stp     q22, q23, [SP, #0x160]
+    stp     q24, q25, [SP, #0x180]
+    stp     q26, q27, [SP, #0x1a0]
+    stp     q28, q29, [SP, #0x1c0]
+    stp     q30, q31, [SP, #0x1e0]
+
+    // store special registers
+    sub     SP, SP, #0x020
+    mrs     x1, SPSR_EL1
+    mrs     x2, ELR_EL1
+    stp     x1, x2, [SP, #0x000]
+    mrs     x1, TPIDR_EL0
+    mrs     x2, SP_EL0
+    stp     x1, x2, [SP, #0x010]
+
+    // setup call
+    mrs     x1, ESR_EL1
+    mov     x2, SP
+
+    // return to ELx stack
+    // msr     SPSEL, #1
+
+    stp     x29, lr, [sp, -16]!
+    mov     x29, sp
+    bl      handle_exception
+    ldp     x29, lr, [sp], 16
+
+    // here just immediately fall into context_restore
 
 .global context_restore
 context_restore:
-    // FIXME: Restore the context from the stack.
+    // use EL0 stack
+    // msr     SPSEL, #0
+
+    // reload special registers
+    ldp     x1, x2, [SP, #0x000]
+    msr     SPSR_EL1, x1
+    msr     ELR_EL1, x2
+    ldp     x1, x2, [SP, #0x010]
+    msr     TPIDR_EL0, x1
+    msr     SP_EL0, x2
+    add     SP, SP, #0x020
+
+    // reload floating pointer register state
+    ldp     q0,  q1,  [SP, #0x000]
+    ldp     q2,  q3,  [SP, #0x020]
+    ldp     q4,  q5,  [SP, #0x040]
+    ldp     q6,  q7,  [SP, #0x060]
+    ldp     q8,  q9,  [SP, #0x080]
+    ldp     q10, q11, [SP, #0x0a0]
+    ldp     q12, q13, [SP, #0x0c0]
+    ldp     q14, q15, [SP, #0x0e0]
+    ldp     q16, q17, [SP, #0x100]
+    ldp     q18, q19, [SP, #0x120]
+    ldp     q20, q21, [SP, #0x140]
+    ldp     q22, q23, [SP, #0x160]
+    ldp     q24, q25, [SP, #0x180]
+    ldp     q26, q27, [SP, #0x1a0]
+    ldp     q28, q29, [SP, #0x1c0]
+    ldp     q30, q31, [SP, #0x1e0]
+    add     SP, SP, #0x200
+
+    // reload integer register state
+    ldp     x1, x2,   [SP, #0x000]
+    ldp     x3, x4,   [SP, #0x010]
+    ldp     x5, x6,   [SP, #0x020]
+    ldp     x7, x8,   [SP, #0x030]
+    ldp     x9, x10,  [SP, #0x040]
+    ldp     x11, x12, [SP, #0x050]
+    ldp     x13, x14, [SP, #0x060]
+    ldp     x15, x16, [SP, #0x070]
+    ldp     x17, x18, [SP, #0x080]
+    ldp     x19, x20, [SP, #0x090]
+    ldp     x21, x22, [SP, #0x0a0]
+    ldp     x23, x24, [SP, #0x0b0]
+    ldp     x25, x26, [SP, #0x0c0]
+    ldp     x27, x28, [SP, #0x0d0]
+    ldr     x29,      [SP, #0x0e0]
+    add     SP, SP, #0x0f0
+
+    // return to ELx stack
+    // msr     SPSEL, #1
 
     ret
 
@@ -123,4 +238,19 @@ context_restore:
 
 .align 11
 _vectors:
-    // FIXME: Setup the 16 exception vectors.
+    HANDLER(0, 0)
+    HANDLER(0, 1)
+    HANDLER(0, 2)
+    HANDLER(0, 3)
+    HANDLER(1, 0)
+    HANDLER(1, 1)
+    HANDLER(1, 2)
+    HANDLER(1, 3)
+    HANDLER(2, 0)
+    HANDLER(2, 1)
+    HANDLER(2, 2)
+    HANDLER(2, 3)
+    HANDLER(3, 0)
+    HANDLER(3, 1)
+    HANDLER(3, 2)
+    HANDLER(3, 3)

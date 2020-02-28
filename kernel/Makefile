@@ -28,6 +28,9 @@ BUILD_DIR := build
 KERNEL := $(BUILD_DIR)/$(RUST_BINARY)
 RUST_LIB := $(BUILD_DIR)/$(RUST_BINARY).a
 
+QEMU ?= qemu-system-aarch64
+QEMU_ARGS ?= -s -M raspi3 -S -serial null -serial mon:stdio -kernel $(KERNEL).bin -drive file=../../2-fs/files/resources/mock4.fat32.img,if=sd,format=raw
+
 .PHONY: all test clean check install
 
 VPATH = ext
@@ -83,7 +86,9 @@ $(KERNEL).bin: $(KERNEL).elf | $(BUILD_DIR)
 	@$(CROSS)-objcopy $< -O binary $@
 
 run: $(KERNEL).bin
-	qemu-system-aarch64 -s -M raspi3 -serial null -serial mon:stdio -kernel build/kernel.bin -drive file=../../2-fs/files/resources/mock4.fat32.img,if=sd,format=raw
+	$(QEMU) $(QEMU_ARGS)
+debug: $(KERNEL).bin
+	$(QEMU) -S $(QEMU_ARGS)
 
 clean:
 	$(XARGO) clean

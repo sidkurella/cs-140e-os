@@ -8,6 +8,7 @@ use pi::interrupt::{Controller, Interrupt};
 pub use self::trap_frame::TrapFrame;
 
 use crate::console::kprintln;
+use crate::shell::shell;
 use self::syndrome::Syndrome;
 use self::irq::handle_irq;
 use self::syscall::handle_syscall;
@@ -43,5 +44,14 @@ pub struct Info {
 /// the trap frame for the exception.
 #[no_mangle]
 pub extern fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
-    unimplemented!("handle_exception")
+    let syn = Syndrome::from(esr);
+
+    kprintln!("== EXCEPTION HANDLER ==");
+    kprintln!("SYNDROME: {:?}", syn);
+    kprintln!("INFO: {:#?}", info);
+    kprintln!("TF: {:#?}", tf);
+
+    shell("except> ");
+
+    tf.elr += 4;
 }

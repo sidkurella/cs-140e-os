@@ -22,7 +22,8 @@ enum Error {
 
 #[derive(Debug)]
 enum HandleError {
-    NoSuchCommand
+    NoSuchCommand,
+    Terminate
 }
 
 /// A structure representing a single shell command.
@@ -132,6 +133,8 @@ impl<'a> Command<'a> {
             }
 
             Ok(())
+        } else if self.path() == "exit" {
+            Err(HandleError::Terminate)
         } else {
             Err(HandleError::NoSuchCommand)
         }
@@ -140,7 +143,7 @@ impl<'a> Command<'a> {
 
 /// Starts a shell using `prefix` as the prefix for each line. This function
 /// returns if the `exit` command is called.
-pub fn shell(prefix: &str) -> ! {
+pub fn shell(prefix: &str) {
     let mut input_buf = [0; MAX_CMDLEN];
     let mut input_vec = StackVec::new(&mut input_buf);
 
@@ -184,6 +187,8 @@ pub fn shell(prefix: &str) -> ! {
                 Err(Error::TooManyArgs) => kprintln!("too many arguments"),
                 Ok(command) => match command.handle(&mut working) {
                     Ok(_) => { },
+                    Err(HandleError::Terminate) =>
+                        break,
                     Err(HandleError::NoSuchCommand) =>
                         kprintln!("unknown command: {}", command.path())
                 }
