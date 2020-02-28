@@ -8,6 +8,8 @@
 #![feature(allocator_api)]
 #![feature(raw_vec_internals)]
 
+#![feature(never_type)]
+#![feature(naked_functions)]
 
 #[macro_use]
 #[allow(unused_imports)]
@@ -22,10 +24,15 @@ pub mod mutex;
 pub mod console;
 pub mod shell;
 pub mod fs;
+pub mod traps;
+pub mod aarch64;
+pub mod process;
+pub mod vm;
 
 #[cfg(not(test))]
 use allocator::Allocator;
 use fs::FileSystem;
+use process::GlobalScheduler;
 
 #[cfg(not(test))]
 #[global_allocator]
@@ -35,6 +42,7 @@ pub static FILE_SYSTEM: FileSystem = FileSystem::uninitialized();
 
 // use console::{kprint, kprintln, CONSOLE};
 use console::kprintln;
+pub static SCHEDULER: GlobalScheduler = GlobalScheduler::uninitialized();
 
 #[no_mangle]
 #[cfg(not(test))]

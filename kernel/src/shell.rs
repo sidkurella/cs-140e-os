@@ -139,7 +139,7 @@ impl<'a> Command<'a> {
 }
 
 /// Starts a shell using `prefix` as the prefix for each line. This function
-/// never returns: it is perpetually in a shell loop.
+/// returns if the `exit` command is called.
 pub fn shell(prefix: &str) -> ! {
     let mut input_buf = [0; MAX_CMDLEN];
     let mut input_vec = StackVec::new(&mut input_buf);
