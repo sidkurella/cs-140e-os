@@ -1,10 +1,10 @@
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone)]
 pub struct TrapFrame {
-    pub spsr: u64,
-    pub elr: u64,
-    pub tpidr: u64,
-    pub sp: u64,
+    pub spsr: u64, // except level to return to
+    pub elr: u64, // exception link reg
+    pub tpidr: u64, // thread id reg
+    pub sp: u64, // stack pointer, EL0
 
     pub _q: [u128; 32],
 
