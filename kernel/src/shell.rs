@@ -198,3 +198,11 @@ pub fn shell(prefix: &str) {
         input_vec.truncate(0);
     }
 }
+
+#[no_mangle]
+pub extern "C" fn run_shell() {
+    kprintln!("starting user shell");
+    shell("user>");
+    unsafe { asm!("brk 1" :::: "volatile"); }
+    loop { shell("user2>"); }
+}

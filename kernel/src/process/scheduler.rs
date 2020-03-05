@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use crate::mutex::Mutex;
 use crate::process::{Process, State, Id};
 use crate::traps::TrapFrame;
+use crate::shell;
 
 /// The `tick` time.
 // FIXME: When you're ready, change this to something more reasonable.
@@ -37,7 +38,24 @@ impl GlobalScheduler {
     /// using timer interrupt based preemptive scheduling. This method should
     /// not return under normal conditions.
     pub fn start(&self) {
-        unimplemented!("GlobalScheduler::start()")
+        let mut process = Process::new().expect("could not create init process");
+        process.trap_frame.sp = process.stack.top().as_ptr() as u64;
+        process.trap_frame.elr = shell::run_shell as *const () as u64;
+        process.trap_frame.tpidr = 1;
+        process.trap_frame.spsr = 0x001;
+
+        unsafe {
+            asm!("
+                mov x0, $0
+                mov sp, x0
+                bl context_restore
+                adr x0, _start
+                mov sp, x0
+                mov x0, 0x0
+                eret
+            " :: "r"(process.trap_frame)
+              :: "volatile");
+        }
     }
 }
 

@@ -59,6 +59,7 @@ pub extern "C" fn kmain() {
   ███████╗╚██████╔╝██╔╝ ██╗   ██║   ╚██████╔╝███████║
   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚══════╝
 ");
+    SCHEDULER.start();
 
     // {
     //     let mut v = vec![1, 2, 3];
@@ -92,8 +93,8 @@ pub extern "C" fn kmain() {
 
     // kprintln!("Drop OK");
 
-    unsafe { asm!("brk 2" :::: "volatile"); }
-    unsafe { asm!("svc 77" :::: "volatile"); }
+    // unsafe { asm!("brk 2" :::: "volatile"); }
+    // unsafe { asm!("svc 77" :::: "volatile"); }
 
     loop {
         kprintln!("Kernel terminated!");
