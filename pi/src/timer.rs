@@ -58,7 +58,17 @@ impl Timer {
     /// interrupts for timer 1 are enabled and IRQs are unmasked, then a timer
     /// interrupt will be issued in `us` microseconds.
     pub fn tick_in(&mut self, us: u32) {
-        unimplemented!()
+        let interval : u64;
+
+        unsafe {
+            asm!("mrs $0, cntfrq_el0" : "=r"(interval));
+        }
+
+        let tval = (interval / 1000000) * (us as u64);
+
+        unsafe {
+            asm!("msr cntp_tval_el0, $0" :: "r"(tval));
+        }
     }
 }
 
@@ -88,5 +98,5 @@ pub fn spin_sleep_ms(ms: u64) {
 /// interrupts for timer 1 are enabled and IRQs are unmasked, then a timer
 /// interrupt will be issued in `us` microseconds.
 pub fn tick_in(us: u32) {
-    unimplemented!()
+    Timer::new().tick_in(us);
 }

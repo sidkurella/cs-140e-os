@@ -44,14 +44,34 @@ pub struct Info {
 /// the trap frame for the exception.
 #[no_mangle]
 pub extern fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
-    let syn = Syndrome::from(esr);
+    if info.kind == Kind::Irq {
+        let interrupts = [
+            Interrupt::Timer1,
+            Interrupt::Timer3,
+            Interrupt::Usb,
+            Interrupt::EL1PhysTimer,
+            Interrupt::Gpio0,
+            Interrupt::Gpio1,
+            Interrupt::Gpio2,
+            Interrupt::Gpio3,
+            Interrupt::Uart
+        ];
+        let controller = Controller::new();
+        for int in interrupts.iter() {
+            if controller.is_pending(*int) {
+                return handle_irq(*int, tf);
+            }
+        }
+    } else {
+        let syn = Syndrome::from(esr);
 
-    kprintln!("== EXCEPTION HANDLER ==");
-    kprintln!("SYNDROME: {:?}", syn);
-    kprintln!("INFO: {:#?}", info);
-    kprintln!("TF: {:#?}", tf);
+        kprintln!("== EXCEPTION HANDLER ==");
+        kprintln!("SYNDROME: {:?}", syn);
+        kprintln!("INFO: {:#?}", info);
+        kprintln!("TF: {:#?}", tf);
 
-    shell("except> ");
+        shell("except> ");
 
-    tf.elr += 4;
+        tf.elr += 4;
+    }
 }

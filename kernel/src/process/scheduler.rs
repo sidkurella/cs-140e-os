@@ -4,6 +4,7 @@ use crate::mutex::Mutex;
 use crate::process::{Process, State, Id};
 use crate::traps::TrapFrame;
 use crate::shell;
+use pi::timer;
 
 /// The `tick` time.
 // FIXME: When you're ready, change this to something more reasonable.
@@ -43,7 +44,8 @@ impl GlobalScheduler {
         process.trap_frame.elr = shell::run_shell as *const () as u64;
         process.trap_frame.tpidr = 1;
         process.trap_frame.spsr = 0x001;
-
+        
+        timer::tick_in(TICK);
         unsafe {
             asm!("
                 mov x0, $0
@@ -51,6 +53,8 @@ impl GlobalScheduler {
                 bl context_restore
                 adr x0, _start
                 mov sp, x0
+                mov x0, 0x1
+                msr cntp_ctl_el0, x0
                 mov x0, 0x0
                 eret
             " :: "r"(process.trap_frame)
