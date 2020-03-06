@@ -10,6 +10,8 @@ use stack_vec::StackVec;
 use fat32::traits::{FileSystem, Dir, Entry, File};
 use fat32::vfat;
 
+use pi::timer;
+
 const MAX_CMDLEN : usize = 512;
 const MAX_ARGLEN : usize = 64;
 
@@ -135,6 +137,10 @@ impl<'a> Command<'a> {
             Ok(())
         } else if self.path() == "exit" {
             Err(HandleError::Terminate)
+        } else if self.path() == "timer" {
+            kprintln!("timer: {}", timer::Timer::new().read());
+            kprintln!("timer tval: {}", timer::Timer::new().read_tval());
+            Ok(())
         } else {
             Err(HandleError::NoSuchCommand)
         }
@@ -202,7 +208,7 @@ pub fn shell(prefix: &str) {
 #[no_mangle]
 pub extern "C" fn run_shell() {
     kprintln!("starting user shell");
-    shell("user>");
+    shell("user> ");
     unsafe { asm!("brk 1" :::: "volatile"); }
-    loop { shell("user2>"); }
+    loop { shell("user2> "); }
 }

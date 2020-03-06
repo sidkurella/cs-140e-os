@@ -54,6 +54,17 @@ impl Timer {
         // x
     }
 
+    pub fn read_tval(&self) -> u64 {
+        let count : u64;
+        let interval : u64;
+
+        unsafe {
+            asm!("mrs $0, cntp_tval_el0" : "=r"(count));
+            asm!("mrs $0, cntfrq_el0" : "=r"(interval));
+        }
+        count / (interval / 1000000)
+    }
+
     /// Sets up a match in timer 1 to occur `us` microseconds from now. If
     /// interrupts for timer 1 are enabled and IRQs are unmasked, then a timer
     /// interrupt will be issued in `us` microseconds.

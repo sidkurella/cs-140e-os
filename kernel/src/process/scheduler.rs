@@ -45,6 +45,13 @@ impl GlobalScheduler {
         process.trap_frame.tpidr = 1;
         process.trap_frame.spsr = 0x001;
         
+        unsafe {
+            asm!("
+                mov x0, 0x1
+                msr cntp_ctl_el0, x0
+                mov x0, 0b11000000011
+            " :::: "volatile");
+        }
         timer::tick_in(TICK);
         unsafe {
             asm!("
@@ -53,8 +60,6 @@ impl GlobalScheduler {
                 bl context_restore
                 adr x0, _start
                 mov sp, x0
-                mov x0, 0x1
-                msr cntp_ctl_el0, x0
                 mov x0, 0x0
                 eret
             " :: "r"(process.trap_frame)
