@@ -17,30 +17,31 @@
 
 /// The Raspberry Pi ARM system timer.
 pub struct Timer {
-    // registers: &'static mut Registers
+    // registers: &'static mut CNTControlBase
 }
 
 impl Timer {
     /// Returns a new instance of `Timer`.
     pub fn new() -> Timer {
         Timer {
-            // registers: unsafe { &mut *(TIMER_REG_BASE as *mut Registers) },
+            // registers: unsafe { &mut *(CNT_CONTROL_BASE as *mut CNTControlBase) }
         }
     }
 
     /// Reads the system timer's counter and returns the 64-bit counter value.
     /// The returned value is the number of elapsed microseconds.
-    #[cfg(unix)]
+    #[cfg(not(target_os = "ros"))]
     pub fn read(&self) -> u64 {
         0
     }
 
     /// Reads the system timer's counter and returns the 64-bit counter value.
     /// The returned value is the number of elapsed microseconds.
-    #[cfg(not(unix))]
+    #[inline(never)]
+    #[cfg(target_os = "ros")]
     pub fn read(&self) -> u64 {
-        let count : u64;
-        let interval : u64;
+        let count: u64;
+        let interval: u64;
 
         unsafe {
             asm!("mrs $0, cntpct_el0" : "=r"(count));
@@ -48,15 +49,12 @@ impl Timer {
         }
 
         count / (interval / 1000000)
-
-        // let mut x : u64 = u64::from(self.registers.CHI.read()) << 32;
-        // x += u64::from(self.registers.CLO.read());
-        // x
     }
 
+    #[inline(never)]
     pub fn read_tval(&self) -> u64 {
-        let count : u64;
-        let interval : u64;
+        let count: u64;
+        let interval: u64;
 
         unsafe {
             asm!("mrs $0, cntp_tval_el0" : "=r"(count));
@@ -69,13 +67,13 @@ impl Timer {
     /// interrupts for timer 1 are enabled and IRQs are unmasked, then a timer
     /// interrupt will be issued in `us` microseconds.
     pub fn tick_in(&mut self, us: u32) {
-        let interval : u64;
+        let interval: u64;
 
         unsafe {
             asm!("mrs $0, cntfrq_el0" : "=r"(interval));
         }
 
-        let tval = (interval / 1000000) * (us as u64);
+        let tval = interval * (us as u64) / 1000000;
 
         unsafe {
             asm!("msr cntp_tval_el0, $0" :: "r"(tval));
